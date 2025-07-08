@@ -1,0 +1,21 @@
+LaunchController/
+  README.md
+  src/
+    launch_controller.ino
+    pins.h
+    pins.cpp
+    config.h
+    sensors.h
+    sensors.cpp
+    ignitors.h
+    ignitors.cpp
+    web_server.h
+    web_server.cpp
+    logging.h
+    logging.cpp
+    canbus.h
+    canbus.cpp
+  data/
+    index.html
+  docs/
+    (add any diagrams, images, etc.)

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Launch Controller v3.5.0709</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🚀 Launch Controller</h1>
+            <div class="version">v3.5.0709</div>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- System Status Panel -->
+        <section class="status-panel">
+            <h2>System Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <label>State:</label>
+                    <span id="systemState" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <label>Group Auth:</label>
+                    <span id="groupAuth" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <label>Abort Active:</label>
+                    <span id="abortActive" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <label>Hardware Safe:</label>
+                    <span id="hardwareSafe" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <label>Can Arm:</label>
+                    <span id="canArm" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <label>Can Launch:</label>
+                    <span id="canLaunch" class="status-value">-</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Emergency Controls -->
+        <section class="emergency-controls">
+            <button id="emergencyAbort" class="btn btn-emergency">
+                🛑 EMERGENCY ABORT
+            </button>
+            <button id="emergencyDisarm" class="btn btn-warning">
+                ⚠️ DISARM ALL
+            </button>
+        </section>
+
+        <!-- Pad Authorization Panel -->
+        <section class="auth-panel">
+            <h2>Pad Authorization</h2>
+            <div class="auth-form">
+                <label for="padSelect">Pad:</label>
+                <select id="padSelect">
+                    <option value="0">Pad 1</option>
+                    <option value="1">Pad 2</option>
+                    <option value="2">Pad 3</option>
+                    <option value="3">Pad 4</option>
+                </select>
+                
+                <label for="playerName">Player Name:</label>
+                <input type="text" id="playerName" placeholder="Enter player name" maxlength="20">
+                
+                <button id="authorizeBtn" class="btn btn-primary">Authorize</button>
+                <button id="deauthorizeBtn" class="btn btn-secondary">Deauthorize</button>
+            </div>
+        </section>
+
+        <!-- Pad Status Grid -->
+        <section class="pads-section">
+            <h2>Pad Status</h2>
+            <div class="pads-grid" id="padsGrid">
+                <!-- Pad cards will be generated dynamically -->
+            </div>
+        </section>
+
+        <!-- Sensor Readings -->
+        <section class="sensors-section">
+            <h2>Sensor Readings</h2>
+            <div class="sensors-grid">
+                <div class="sensor-card">
+                    <h3>Environmental</h3>
+                    <div class="sensor-item">
+                        <label>Temperature:</label>
+                        <span id="temperature" class="sensor-value">-</span>
+                    </div>
+                    <div class="sensor-item">
+                        <label>Humidity:</label>
+                        <span id="humidity" class="sensor-value">-</span>
+                    </div>
+                    <div class="sensor-item">
+                        <label>Wind Speed:</label>
+                        <span id="windSpeed" class="sensor-value">-</span>
+                    </div>
+                </div>
+                
+                <div class="sensor-card">
+                    <h3>Power</h3>
+                    <div class="sensor-item">
+                        <label>System Voltage:</label>
+                        <span id="voltage" class="sensor-value">-</span>
+                    </div>
+                    <div class="sensor-item">
+                        <label>Free Heap:</label>
+                        <span id="freeHeap" class="sensor-value">-</span>
+                    </div>
+                    <div class="sensor-item">
+                        <label>Uptime:</label>
+                        <span id="uptime" class="sensor-value">-</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Control Tabs -->
+        <section class="controls-section">
+            <div class="tab-container">
+                <div class="tab-buttons">
+                    <button class="tab-btn active" data-tab="launch">Launch</button>
+                    <button class="tab-btn" data-tab="servo">Servo</button>
+                    <button class="tab-btn" data-tab="settings">Settings</button>
+                    <button class="tab-btn" data-tab="logs">Logs</button>
+                    <button class="tab-btn" data-tab="diagnostics">Diagnostics</button>
+                </div>
+
+                <!-- Launch Control Tab -->
+                <div class="tab-content active" id="launch-tab">
+                    <h3>Launch Control</h3>
+                    <div class="launch-controls">
+                        <div class="control-group">
+                            <label for="launchPadSelect">Select Pad:</label>
+                            <select id="launchPadSelect">
+                                <option value="0">Pad 1</option>
+                                <option value="1">Pad 2</option>
+                                <option value="2">Pad 3</option>
+                                <option value="3">Pad 4</option>
+                            </select>
+                        </div>
+                        
+                        <div class="button-group">
+                            <button id="armBtn" class="btn btn-warning">ARM</button>
+                            <button id="fireBtn" class="btn btn-danger">FIRE</button>
+                            <button id="disarmBtn" class="btn btn-secondary">DISARM</button>
+                        </div>
+                        
+                        <div class="safety-checklist" id="safetyChecklist">
+                            <h4>Safety Checklist</h4>
+                            <div class="checklist-item">
+                                <span class="check-icon" id="checkAuth">❌</span>
+                                <span>Group Authorized</span>
+                            </div>
+                            <div class="checklist-item">
+                                <span class="check-icon" id="checkAbort">❌</span>
+                                <span>No Active Abort</span>
+                            </div>
+                            <div class="checklist-item">
+                                <span class="check-icon" id="checkHardware">❌</span>
+                                <span>Hardware Safe</span>
+                            </div>
+                            <div class="checklist-item">
+                                <span class="check-icon" id="checkContinuity">❌</span>
+                                <span>Ignitor Continuity</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Servo Control Tab -->
+                <div class="tab-content" id="servo-tab">
+                    <h3>Servo Control</h3>
+                    <div class="servo-controls">
+                        <div class="control-group">
+                            <label for="servoPadSelect">Select Pad:</label>
+                            <select id="servoPadSelect">
+                                <option value="0">Pad 1</option>
+                                <option value="1">Pad 2</option>
+                                <option value="2">Pad 3</option>
+                                <option value="3">Pad 4</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="servoAngle">Angle (0-180°):</label>
+                            <input type="range" id="servoAngle" min="0" max="180" value="90">
+                            <span id="servoAngleValue">90°</span>
+                        </div>
+                        
+                        <div class="button-group">
+                            <button id="setServoBtn" class="btn btn-primary">Set Position</button>
+                            <button id="centerServoBtn" class="btn btn-secondary">Center (90°)</button>
+                        </div>
+                        
+                        <div class="preset-buttons">
+                            <button class="preset-btn" data-angle="0">0°</button>
+                            <button class="preset-btn" data-angle="45">45°</button>
+                            <button class="preset-btn" data-angle="90">90°</button>
+                            <button class="preset-btn" data-angle="135">135°</button>
+                            <button class="preset-btn" data-angle="180">180°</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Tab -->
+                <div class="tab-content" id="settings-tab">
+                    <h3>Settings</h3>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label>WiFi SSID:</label>
+                            <span id="wifiSSID">-</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>IP Address:</label>
+                            <span id="ipAddress">-</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>AP Mode:</label>
+                            <span id="apMode">-</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Max Pads:</label>
+                            <span id="maxPads">-</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Auth Timeout:</label>
+                            <span id="authTimeout">-</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Abort Timeout:</label>
+                            <span id="abortTimeout">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="update-section">
+                        <h4>Firmware Update</h4>
+                        <input type="file" id="firmwareFile" accept=".bin">
+                        <button id="updateBtn" class="btn btn-warning">Upload Firmware</button>
+                        <div id="updateProgress" class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logs Tab -->
+                <div class="tab-content" id="logs-tab">
+                    <h3>System Logs</h3>
+                    <div class="logs-controls">
+                        <button id="refreshLogs" class="btn btn-secondary">Refresh</button>
+                        <button id="downloadLogs" class="btn btn-primary">Download</button>
+                        <label for="logLines">Lines:</label>
+                        <select id="logLines">
+                            <option value="50">50</option>
+                            <option value="100" selected>100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                        </select>
+                    </div>
+                    <div class="logs-container">
+                        <pre id="logsContent">Loading logs...</pre>
+                    </div>
+                </div>
+
+                <!-- Diagnostics Tab -->
+                <div class="tab-content" id="diagnostics-tab">
+                    <h3>System Diagnostics</h3>
+                    <div class="diagnostics-controls">
+                        <button id="refreshDiag" class="btn btn-secondary">Refresh</button>
+                        <button id="runTest" class="btn btn-primary">Run Hardware Test</button>
+                    </div>
+                    <div class="diagnostics-container">
+                        <pre id="diagnosticsContent">Loading diagnostics...</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <span>Launch Controller v3.5.0709</span>
+                <span>Connected Clients: <span id="connectedClients">0</span></span>
+                <span>Last Update: <span id="lastUpdate">-</span></span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Modals -->
+    <div id="abortModal" class="modal">
+        <div class="modal-content">
+            <h2>⚠️ Abort Acknowledgment Required</h2>
+            <p>An abort has been initiated. All players must acknowledge the abort within 1 minute.</p>
+            <div class="abort-timer">
+                <span>Time remaining: </span>
+                <span id="abortTimer" class="timer">60</span>
+                <span> seconds</span>
+            </div>
+            <button id="acknowledgeAbort" class="btn btn-danger">ACKNOWLEDGE ABORT</button>
+        </div>
+    </div>
+
+    <div id="errorModal" class="modal">
+        <div class="modal-content">
+            <h2>❌ System Error</h2>
+            <p id="errorMessage">An error has occurred.</p>
+            <button id="closeError" class="btn btn-secondary">Close</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

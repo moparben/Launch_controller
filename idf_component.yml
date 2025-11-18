@@ -1,0 +1,9 @@
+## IDF Component Manager Manifest File
+dependencies:
+  ## Required IDF version
+  idf: ">=5.4.0"
+  # MIPI DSI display components
+  espressif/esp_lcd_ili9881c: "^1.1.0"
+  espressif/esp_lcd_ek79007: "^1.0.0"
+  # LVGL graphics library
+  lvgl/lvgl: "^9.2.0"

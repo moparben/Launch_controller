@@ -1,0 +1,57 @@
+# ========================================
+# LVGL Configuration  
+# ========================================
+CONFIG_LV_CONF_SKIP=y
+CONFIG_LV_COLOR_DEPTH_24=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_USE_OBSERVER=y
+CONFIG_LV_USE_SYSMON=y
+CONFIG_LV_USE_PERF_MONITOR=y
+
+# ========================================
+# ESP32-P4 Platform Configuration
+# ========================================
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_IDF_TARGET="esp32p4"
+
+# ESP32-P4-Nano flash configuration (corrected for DIO mode)
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# ========================================
+# CRITICAL: Performance Optimizations
+# (Based on Waveshare official recommendations)
+# ========================================
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
+
+# ========================================
+# SPIRAM Optimizations for Display Performance
+# ========================================
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
+
+# ========================================
+# Memory and Cache Optimizations
+# ========================================
+# Note: ESP32P4_DATA_CACHE_* options removed - deprecated in ESP-IDF v5.4.2
+
+# ========================================
+# Task Scheduler Optimizations
+# ========================================
+# Increase watchdog timeout for LVGL processing
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# ========================================
+# Logging Optimization for Performance
+# ========================================
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ========================================
+# Display Controller Selection
+# ========================================
+CONFIG_EXAMPLE_LCD_USE_JD9365=y

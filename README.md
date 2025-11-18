@@ -1,11 +1,80 @@
-| Supported Targets | ESP32-P4 |
-| ----------------- | -------- |
+# ESP32-P4 Display Controller with GT911 Touch
 
-# MIPI DSI LCD Panel Example
+## 🚀 **Project Status: Operational Display + Touch Debugging**
 
-[esp_lcd](https://docs.espressif.com/projects/esp-idf/en/latest/esp32p4/api-reference/peripherals/lcd/dsi_lcd.html) supports MIPI DSI interfaced LCD panel, with frame buffer(s) managed by the driver itself.
+This project implements a complete display controller system for the ESP32-P4 Waveshare development board with:
+- ✅ **10.1" MIPI-DSI Display** (800x1280) - Fully operational
+- 🔧 **GT911 Capacitive Touch** - Hardware conflict resolution in progress
+- ✅ **LVGL v9.2.2 Framework** - Complete graphics library integration
+- ✅ **Multi-MCU CAN Bus** - Rocket launcher system communication
+- ✅ **Clean Build System** - Optimized dependencies
 
-This example shows the general process of installing a MIPI DSI LCD driver, and displays a LVGL widget on the screen.
+## 📊 **Current Achievement Level**
+
+| Component | Status | Details |
+|-----------|---------|---------|
+| Display System | ✅ **Operational** | JD9365 MIPI-DSI working perfectly |
+| Touch Controller | 🔧 **Debugging** | GT911 I2C conflict resolution in progress |
+| LVGL Graphics | ✅ **Ready** | 1000+ source files built successfully |
+| Build System | ✅ **Clean** | Deprecated configs fixed, unused deps removed |
+| Version Control | ✅ **Linked** | Connected to Launch_controller repository |
+
+## 🏗️ **Architecture**
+
+### Hardware Platform
+- **MCU**: ESP32-P4 (360MHz dual-core RISC-V)
+- **Display**: Waveshare 10.1" MIPI-DSI (JD9365 controller)  
+- **Touch**: GT911 capacitive touch controller
+- **Memory**: 32MB PSRAM, 16MB Flash
+- **Communication**: CAN bus for multi-MCU rocket system
+
+### I2C Bus Design (Sequential Sharing)
+```
+JD9365 Display Controller:
+  1. Creates I2C_NUM_1 bus (GPIO7/8)
+  2. Initializes display (~1.25 seconds)  
+  3. Deinitializes I2C bus
+
+GT911 Touch Controller:
+  4. Recreates I2C_NUM_1 bus (same pins)
+  5. Initializes touch controller
+  6. Maintains bus for ongoing touch operations
+```
+
+### Software Stack
+- **ESP-IDF**: v5.4.2 (latest stable)
+- **LVGL**: v9.2.2 (advanced graphics library)
+- **Components**: Waveshare JD9365, Espressif GT911 touch driver
+- **Build System**: ESP-IDF managed components (dependency-optimized)
+
+## 🔧 **Recent Fixes & Optimizations**
+
+### 1. I2C Bus Conflict Resolution
+**Problem**: GT911 touch controller failed to initialize due to JD9365 not properly releasing I2C bus
+```
+E (6799) i2c.common: I2C bus id(1) has already been acquired
+```
+
+**Solution**: Extended JD9365 cleanup delay from 500ms to 2000ms
+- Based on v3.04 working code analysis  
+- JD9365 requires ~1.25 seconds to fully release I2C resources
+- Simplified approach removes complex retry logic
+
+### 2. Build System Optimization  
+**Problem**: Deprecated configuration warnings and unnecessary dependencies
+```
+warning: unknown kconfig symbol 'ESP32P4_DATA_CACHE_SIZE_64KB'
+```
+
+**Solution**: 
+- Removed deprecated ESP32P4 cache configuration options
+- Updated SPIRAM config: `CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y`
+- Cleaned up unused display controller dependencies
+
+### 3. Version Control Integration
+- Linked to `https://github.com/moparben/Launch_controller`
+- Branch: `esp32_p4_display_controller`
+- Git configuration: moparben@yahoo.com
 
 ## How to use the example
 

@@ -132,6 +132,13 @@ bool cal_transform(uint16_t raw_x, uint16_t raw_y,
 void cal_update_bounds(uint16_t raw_x, uint16_t raw_y);
 
 /**
+ * Set raw min/max bounds explicitly. This seeds the automatic mapping that is
+ * used while no explicit transform is stored. Callers can pass 0 for min to
+ * indicate a zero-based range.
+ */
+void cal_set_bounds(uint16_t min_x, uint16_t max_x, uint16_t min_y, uint16_t max_y);
+
+/**
  * Draw the current calibration screen
  * Should be called after cal_start() and after each cal_process_touch()
  */

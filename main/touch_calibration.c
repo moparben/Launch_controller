@@ -166,6 +166,7 @@ static uint16_t observed_min_x = 0xFFFF;
 static uint16_t observed_max_x = 0x0000;
 static uint16_t observed_min_y = 0xFFFF;
 static uint16_t observed_max_y = 0x0000;
+static bool observed_bounds_reported = false;
 
 void cal_update_bounds(uint16_t raw_x, uint16_t raw_y)
 {
@@ -173,6 +174,23 @@ void cal_update_bounds(uint16_t raw_x, uint16_t raw_y)
     if (raw_x > observed_max_x) observed_max_x = raw_x;
     if (raw_y < observed_min_y) observed_min_y = raw_y;
     if (raw_y > observed_max_y) observed_max_y = raw_y;
+    // If we have reasonable bounds and not yet reported, log for debug
+    if (has_observed_bounds() && !observed_bounds_reported) {
+        ESP_LOGI(TAG, "Observed raw range X: %d..%d, Y: %d..%d", observed_min_x, observed_max_x, observed_min_y, observed_max_y);
+        observed_bounds_reported = true;
+    }
+}
+
+void cal_set_bounds(uint16_t min_x, uint16_t max_x, uint16_t min_y, uint16_t max_y)
+{
+    if (min_x < max_x && min_y < max_y) {
+        observed_min_x = min_x;
+        observed_max_x = max_x;
+        observed_min_y = min_y;
+        observed_max_y = max_y;
+        observed_bounds_reported = false; // permit logging once
+        ESP_LOGI(TAG, "Calibration bounds seeded: X=%d..%d Y=%d..%d", observed_min_x, observed_max_x, observed_min_y, observed_max_y);
+    }
 }
 
 // Return true if we have reasonable observed bounds (avoid defaults)

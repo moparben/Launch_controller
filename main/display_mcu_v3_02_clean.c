@@ -45,9 +45,17 @@ static const char *TAG = "DISPLAY_v3.02";
 // Hardware Configuration
 // ============================================================================
 
-// Display dimensions (landscape orientation)
+// Display dimensions (application coordinate space: portrait)
+// NOTE: The physical JD9365 panel is native 800x1280 (portrait). For now
+// operate the application in portrait mode so the display and touch map
+// directly to native panel coordinates.
 #define DISPLAY_WIDTH       800
 #define DISPLAY_HEIGHT      1280
+
+// Native physical panel resolution (portrait) used in DPI config and
+// touch raw coordinate defaults:
+#define DISPLAY_NATIVE_WIDTH     800
+#define DISPLAY_NATIVE_HEIGHT    1280
 
 // MIPI-DSI Configuration
 #define MIPI_DSI_LANE_BITRATE_MBPS  1000
@@ -59,22 +67,28 @@ static const char *TAG = "DISPLAY_v3.02";
 #define GPIO_I2C_SDA        7
 #define GPIO_I2C_SCL        8
 #define GPIO_TOUCH_RST      27
+// Optional LCD reset pin - set to your board's LCD reset if available; set to -1 to skip
+#define GPIO_LCD_RST        -1
 
 // Touch configuration
 #define TOUCH_I2C_ADDR      0x5D
+
+#ifndef ESP_LCD_TOUCH_GT911_PRODUCT_ID_REG
+#define ESP_LCD_TOUCH_GT911_PRODUCT_ID_REG (0x8140)
+#endif
 
 // ============================================================================
 // Global Handles
 // ============================================================================
 
 esp_lcd_panel_handle_t panel_handle = NULL;
+static bool panel_hw_swap_supported = false;
 SemaphoreHandle_t draw_finish_sem = NULL;
 
 static esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 static esp_lcd_panel_io_handle_t mipi_dbi_io = NULL;
 static esp_ldo_channel_handle_t ldo_mipi_phy = NULL;
 static esp_lcd_touch_handle_t touch_handle = NULL;
-
 // ============================================================================
 // DMA Draw Complete Callback
 // ============================================================================
@@ -90,7 +104,7 @@ static IRAM_ATTR bool on_draw_complete(esp_lcd_panel_handle_t panel,
     }
     return xHigherPriorityTaskWoken == pdTRUE;
 }
-
+// stray line removed
 // ============================================================================
 // Display Initialization
 // ============================================================================
@@ -113,8 +127,6 @@ static esp_err_t init_display(void)
         .voltage_mv = MIPI_DSI_PHY_LDO_VOLTAGE_MV,
     };
     ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo_cfg, &ldo_mipi_phy));
-    ESP_LOGI(TAG, "LDO channel %d acquired at %dmV", 
-             MIPI_DSI_PHY_LDO_CHANNEL, MIPI_DSI_PHY_LDO_VOLTAGE_MV);
     
     // Configure backlight GPIO
     gpio_config_t bk_gpio_config = {
@@ -151,8 +163,10 @@ static esp_err_t init_display(void)
         .dpi_clock_freq_mhz = 80,
         .pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB565,
         .video_timing = {
-            .h_size = DISPLAY_WIDTH,
-            .v_size = DISPLAY_HEIGHT,
+            // Use native panel orientation for DPI timings (portrait) and
+            // rotate the panel afterward so the app sees landscape.
+            .h_size = DISPLAY_NATIVE_WIDTH,
+            .v_size = DISPLAY_NATIVE_HEIGHT,
             .hsync_back_porch = 140,
             .hsync_pulse_width = 40,
             .hsync_front_porch = 40,
@@ -169,20 +183,24 @@ static esp_err_t init_display(void)
         .mipi_config = {
             .dsi_bus = dsi_bus,
             .dpi_config = &dpi_config,
+            .lane_num = 2,
         },
     };
     
     esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = -1,
+        .reset_gpio_num = GPIO_LCD_RST,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
         .vendor_config = &vendor_config,
     };
     
     ESP_ERROR_CHECK(esp_lcd_new_panel_jd9365(mipi_dbi_io, &panel_config, &panel_handle));
+    ESP_LOGI(TAG, "panel handle %p, reset pin: %d", panel_handle, panel_config.reset_gpio_num);
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    ESP_LOGI(TAG, "Panel init completed, now enabling display output");
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+    vTaskDelay(pdMS_TO_TICKS(100)); // give panel some time to power up
     ESP_LOGI(TAG, "JD9365 panel initialized (%dx%d)", DISPLAY_WIDTH, DISPLAY_HEIGHT);
     
     // Register DMA completion callback
@@ -191,9 +209,86 @@ static esp_err_t init_display(void)
     };
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(panel_handle, &callbacks, draw_finish_sem));
     ESP_LOGI(TAG, "DMA callbacks registered");
+    // Ensure there's no axis swap for portrait. If the panel driver is in a
+    // swapped state, request swap off. For most JD9365 revisions this will
+    // either succeed or return ESP_ERR_NOT_SUPPORTED - either is fine.
+    esp_err_t rc = esp_lcd_panel_swap_xy(panel_handle, false);
+    if (rc == ESP_OK) {
+        // hardware supports swap; we don't need software mapping
+        panel_hw_swap_supported = true;
+        ESP_LOGI(TAG, "Panel swap_xy supported by driver");
+    } else {
+        panel_hw_swap_supported = false;
+        ESP_LOGW(TAG, "Panel swap_xy failed (not supported): %s", esp_err_to_name(rc));
+    }
+    // Reset any mirroring; for portrait defaults we prefer no mirroring
+    rc = esp_lcd_panel_mirror(panel_handle, false, false);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "Panel mirror adjustment failed: %s", esp_err_to_name(rc));
+    }
     
     ESP_LOGI(TAG, "Display initialization complete!");
     return ESP_OK;
+}
+
+// Helper: draw a rect in application coordinates (DISPLAY_WIDTH x DISPLAY_HEIGHT)
+// If hardware swap isn't supported, and software swap is enabled, perform
+// a simple mapping to the hardware coordinates (native portrait) so our
+// application remains in landscape coordinate space.
+static void display_draw_filled_rect(int x0, int y0, int x1, int y1, uint16_t color)
+{
+    if (!panel_handle || !draw_finish_sem) return;
+    // Clamp coordinates
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > DISPLAY_WIDTH) x1 = DISPLAY_WIDTH;
+    if (y1 > DISPLAY_HEIGHT) y1 = DISPLAY_HEIGHT;
+    if (x1 <= x0 || y1 <= y0) return;
+
+#if CAL_APP_SOFTWARE_SWAP_XY
+    // If the panel driver didn't swap axes, draw rotated rectangles by
+    // mapping app coords (x,y) -> hw coords (y,x) and drawing per hardware row
+    // (avoids needing to transpose actual image buffers)
+    // Check if hardware supports swap - if so, we can draw directly
+    if (!panel_hw_swap_supported) {
+        int hw_x0 = y0;
+        int hw_x1 = y1;
+        int hw_y0 = x0;
+        int hw_y1 = x1;
+        int hw_width = hw_x1 - hw_x0;
+        uint16_t *hw_line = heap_caps_malloc(hw_width * sizeof(uint16_t), MALLOC_CAP_DMA);
+        if (!hw_line) return;
+        for (int i = 0; i < hw_width; i++) hw_line[i] = color;
+        for (int y = hw_y0; y < hw_y1; y++) {
+            esp_err_t r = esp_lcd_panel_draw_bitmap(panel_handle, hw_x0, y, hw_x1, y + 1, hw_line);
+            if (r != ESP_OK) {
+                ESP_LOGW(TAG, "display_draw_filled_rect: draw failed: %s", esp_err_to_name(r));
+                break;
+            }
+            if (xSemaphoreTake(draw_finish_sem, portMAX_DELAY) != pdTRUE) {
+                ESP_LOGW(TAG, "display_draw_filled_rect: wait for draw finish timed out");
+            }
+        }
+        free(hw_line);
+        return;
+    }
+#endif
+
+    int width = x1 - x0;
+    uint16_t *line = heap_caps_malloc(width * sizeof(uint16_t), MALLOC_CAP_DMA);
+    if (!line) return;
+    for (int i = 0; i < width; i++) line[i] = color;
+    for (int y = y0; y < y1; y++) {
+        esp_err_t r = esp_lcd_panel_draw_bitmap(panel_handle, x0, y, x1, y + 1, line);
+        if (r != ESP_OK) {
+            ESP_LOGW(TAG, "display_draw_filled_rect: draw failed: %s", esp_err_to_name(r));
+            break;
+        }
+        if (xSemaphoreTake(draw_finish_sem, portMAX_DELAY) != pdTRUE) {
+            ESP_LOGW(TAG, "display_draw_filled_rect: wait for draw finish timed out");
+        }
+    }
+    free(line);
 }
 
 // ============================================================================
@@ -228,6 +323,11 @@ static esp_err_t init_touch(void)
         ESP_LOGE(TAG, "Failed to create or get I2C bus handle for GT911");
         return ESP_ERR_INVALID_STATE;
     }
+    i2c_master_bus_handle_t master_i2c_bus = i2c_bus_get_internal_bus_handle(local_i2c_bus);
+    if (!master_i2c_bus) {
+        ESP_LOGE(TAG, "Failed to get internal I2C master handle from wrapper");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     // Attempt to probe address (0x5D or 0x14) by creating a temporary io
     // and reading the PRODUCT ID register. This allows us to pick a correct
@@ -239,7 +339,7 @@ static esp_err_t init_touch(void)
     for (int i = 0; i < 2 && !found; ++i) {
         tp_io_config.dev_addr = candidate_addrs[i];
         esp_lcd_panel_io_handle_t probe_io = NULL;
-        if (esp_lcd_new_panel_io_i2c_v2(local_i2c_bus, &tp_io_config, &probe_io) == ESP_OK && probe_io) {
+        if (esp_lcd_new_panel_io_i2c_v2(master_i2c_bus, &tp_io_config, &probe_io) == ESP_OK && probe_io) {
             // Try reading product ID
             uint8_t buf[8];
             esp_err_t r = esp_lcd_panel_io_rx_param(probe_io, ESP_LCD_TOUCH_GT911_PRODUCT_ID_REG, buf, sizeof(buf));
@@ -249,7 +349,7 @@ static esp_err_t init_touch(void)
                 if (len > sizeof(pid) - 1) len = sizeof(pid) - 1;
                 for (size_t k = 0; k < len; ++k) pid[k] = (buf[k] >= 32 && buf[k] < 127) ? buf[k] : '.';
                 pid[len] = '\0';
-                ESP_LOGI(TAG, "Probe address 0x%02X: product id approx '%s'", candidate_addrs[i], pid);
+                ESP_LOGI(TAG, "Probe address 0x%02X: product id approx '%s'", (unsigned int)candidate_addrs[i], pid);
                 // Use the first successful read
                 tp_io_config.dev_addr = candidate_addrs[i];
                 found = true;
@@ -260,13 +360,17 @@ static esp_err_t init_touch(void)
     }
     // If not found, fall back to default (value in tp_io_config set earlier: 0x5D) and log
     if (!found) {
-        ESP_LOGW(TAG, "GT9xx probe failed - using default addr 0x%02X", tp_io_config.dev_addr);
+        ESP_LOGW(TAG, "GT9xx probe failed - using default addr 0x%02X", (unsigned int)tp_io_config.dev_addr);
     }
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c_v2(local_i2c_bus, &tp_io_config, &tp_io_handle));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c_v2(master_i2c_bus, &tp_io_config, &tp_io_handle));
     
     esp_lcd_touch_config_t tp_cfg = {
-        .x_max = DISPLAY_WIDTH,
-        .y_max = DISPLAY_HEIGHT,
+        // The touch controller reports coordinates in the native panel
+        // orientation (portrait 800x1280). Use native values to ensure the
+        // touch driver maps to the hardware correctly. The calibration
+        // layer is responsible for mapping to application landscape coords.
+        .x_max = DISPLAY_NATIVE_WIDTH,
+        .y_max = DISPLAY_NATIVE_HEIGHT,
         .rst_gpio_num = GPIO_TOUCH_RST,
         .int_gpio_num = -1,  // Polling mode
         .levels = {
@@ -274,15 +378,15 @@ static esp_err_t init_touch(void)
             .interrupt = 0,
         },
         .flags = {
+            // No raw swap here - the panel is in native portrait orientation.
+            // Use mirroring only if required by module wiring.
             .swap_xy = 0,
             .mirror_x = 0,
             .mirror_y = 0,
         },
     };
     
-    esp_lcd_touch_io_gt911_config_t gt911_config = {
-        .dev_addr = TOUCH_I2C_ADDR,
-    };
+    // 'gt911_config' is not required here; the touch driver will use the io/probe dev address
     
     ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(tp_io_handle, &tp_cfg, &touch_handle));
     ESP_LOGI(TAG, "GT9xx touch controller initialized");
@@ -379,23 +483,7 @@ static void touch_task(void *pvParameters)
 static void fill_screen(uint16_t color)
 {
     if (!panel_handle || !draw_finish_sem) return;
-    
-    // Allocate one line
-    uint16_t *line = heap_caps_malloc(DISPLAY_WIDTH * sizeof(uint16_t), MALLOC_CAP_DMA);
-    if (!line) return;
-    
-    // Fill with color
-    for (int i = 0; i < DISPLAY_WIDTH; i++) {
-        line[i] = color;
-    }
-    
-    // Draw each line
-    for (int y = 0; y < DISPLAY_HEIGHT; y++) {
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, DISPLAY_WIDTH, y + 1, line);
-        xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
-    }
-    
-    free(line);
+    display_draw_filled_rect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, color);
 }
 
 static void draw_test_pattern(void)
@@ -406,37 +494,24 @@ static void draw_test_pattern(void)
     fill_screen(0x0010);
     
     // Draw corner markers
-    uint16_t *block = heap_caps_malloc(50 * 50 * sizeof(uint16_t), MALLOC_CAP_DMA);
-    if (!block) return;
     
-    // Top-left: Red
-    for (int i = 0; i < 50 * 50; i++) block[i] = 0xF800;
-    esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, 50, 50, block);
-    xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
+    // Top-left: Red (use our app-space rect helper)
+    display_draw_filled_rect(0, 0, 50, 50, 0xF800);
     
     // Top-right: Green
-    for (int i = 0; i < 50 * 50; i++) block[i] = 0x07E0;
-    esp_lcd_panel_draw_bitmap(panel_handle, DISPLAY_WIDTH - 50, 0, DISPLAY_WIDTH, 50, block);
-    xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
+    display_draw_filled_rect(DISPLAY_WIDTH - 50, 0, DISPLAY_WIDTH, 50, 0x07E0);
     
     // Bottom-left: Blue
-    for (int i = 0; i < 50 * 50; i++) block[i] = 0x001F;
-    esp_lcd_panel_draw_bitmap(panel_handle, 0, DISPLAY_HEIGHT - 50, 50, DISPLAY_HEIGHT, block);
-    xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
+    display_draw_filled_rect(0, DISPLAY_HEIGHT - 50, 50, DISPLAY_HEIGHT, 0x001F);
     
     // Bottom-right: Yellow
-    for (int i = 0; i < 50 * 50; i++) block[i] = 0xFFE0;
-    esp_lcd_panel_draw_bitmap(panel_handle, DISPLAY_WIDTH - 50, DISPLAY_HEIGHT - 50, 
-                              DISPLAY_WIDTH, DISPLAY_HEIGHT, block);
-    xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
+    display_draw_filled_rect(DISPLAY_WIDTH - 50, DISPLAY_HEIGHT - 50, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0xFFE0);
     
     // Center: White
-    for (int i = 0; i < 50 * 50; i++) block[i] = 0xFFFF;
-    esp_lcd_panel_draw_bitmap(panel_handle, (DISPLAY_WIDTH - 50) / 2, (DISPLAY_HEIGHT - 50) / 2,
-                              (DISPLAY_WIDTH + 50) / 2, (DISPLAY_HEIGHT + 50) / 2, block);
-    xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
+    display_draw_filled_rect((DISPLAY_WIDTH - 50) / 2, (DISPLAY_HEIGHT - 50) / 2,
+                              (DISPLAY_WIDTH + 50) / 2, (DISPLAY_HEIGHT + 50) / 2, 0xFFFF);
     
-    free(block);
+    // no temporary block needed
     
     ESP_LOGI(TAG, "Test pattern complete");
     ESP_LOGI(TAG, "  Red=Top-Left, Green=Top-Right");
@@ -468,7 +543,9 @@ void app_main(void)
     ESP_ERROR_CHECK(init_display());
     
     // Draw initial test pattern
+    ESP_LOGI(TAG, "About to draw test pattern");
     draw_test_pattern();
+    ESP_LOGI(TAG, "Draw test pattern called");
     
     // Small delay to see the test pattern
     vTaskDelay(pdMS_TO_TICKS(1000));

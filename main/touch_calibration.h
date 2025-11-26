@@ -14,7 +14,9 @@
  * display coordinates. If no calibration is present, the system will
  * estimate raw ranges from observed touches to provide a reasonable
  * default mapping.
- * but the display is rotated 90°, so we need to map touch to display coords.
+ *
+ * Note: This firmware uses portrait orientation by default. The
+ * calibration mapping assumes raw touch axes align with the display.
  */
 
 #ifndef TOUCH_CALIBRATION_H
@@ -28,16 +30,30 @@
 extern "C" {
 #endif
 
-// Display dimensions (after rotation)
+// Display dimensions (portrait orientation)
+// Align calibration defaults with the display so the system
+// uses the same width/height for mapping and transforms.
 #define CAL_DISPLAY_WIDTH   800
 #define CAL_DISPLAY_HEIGHT  1280
 
-// These are defaults and used only when a calibrated transform isn't
-// available. For GT9xx devices the native raw ranges may differ — the
-// calibration implementation dynamically observes raw bounds and uses
-// those to compute a default mapping when required.
-#define CAL_TOUCH_WIDTH     1280
-#define CAL_TOUCH_HEIGHT    800
+// If the panel driver does not support a hardware swap of X/Y, we can
+// perform a software swap in the application so the user-facing
+// coordinate space is landscape while the hardware remains in its
+// portrait native orientation.
+// 0 = no app-level swap (use hardware swap if available)
+// 1 = always use app-level swap (software rotate X/Y on draw & mapping)
+// For portrait mode, we don't swap axes at the app-level; keep the
+// calibration mapping and drawing in the panel's native orientation.
+#define CAL_APP_SOFTWARE_SWAP_XY 0
+
+// Default raw touch ranges - set to the panel native orientation (portrait)
+// The Waveshare 10.1" JD9365 panel's native orientation is 800x1280 (portrait). When
+// the display is rotated to landscape via `esp_lcd_panel_swap_xy`, the raw touch
+// axes remain in the native panel orientation. Use these native values as the
+// default raw ranges so default mapping is reasonable before calibration data
+// is written to NVS.
+#define CAL_TOUCH_WIDTH     800
+#define CAL_TOUCH_HEIGHT    1280
 
 // Calibration point structure
 typedef struct {

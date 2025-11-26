@@ -32,6 +32,15 @@ extern "C" {
 esp_err_t esp_lcd_touch_new_i2c_gt911(const esp_lcd_panel_io_handle_t io, const esp_lcd_touch_config_t *config, esp_lcd_touch_handle_t *out_touch);
 
 /**
+ * @brief Query raw resolution from a GT9xx controller via config registers
+ *
+ * If the device supports it, populates raw_x_max and raw_y_max with the
+ * controller's native coordinate resolution. Returns ESP_OK when values are
+ * valid. If not present/invalid, returns ESP_ERR_NOT_SUPPORTED/ESP_ERR_NOT_FOUND.
+ */
+esp_err_t esp_lcd_touch_gt911_get_raw_resolution(esp_lcd_touch_handle_t tp, uint16_t *raw_x_max, uint16_t *raw_y_max);
+
+/**
  * @brief I2C address of the GT911 controller
  *
  * @note When power-on detects low level of the interrupt gpio, address is 0x5D.

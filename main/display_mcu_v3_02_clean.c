@@ -252,7 +252,15 @@ static esp_err_t init_touch(void)
     };
     
     ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(tp_io_handle, &tp_cfg, &touch_handle));
-    ESP_LOGI(TAG, "GT911 touch controller initialized");
+    ESP_LOGI(TAG, "GT9xx touch controller initialized");
+
+    // Try to query the native raw resolution from the GT9xx controller and
+    // seed the calibration bounds so the default mapping works correctly
+    uint16_t raw_x_max = 0, raw_y_max = 0;
+    if (esp_lcd_touch_gt911_get_raw_resolution(touch_handle, &raw_x_max, &raw_y_max) == ESP_OK) {
+        // Seed the calibration bounds: min=0, max=raw_max
+        cal_set_bounds(0, raw_x_max, 0, raw_y_max);
+    }
     
     return ESP_OK;
 }
@@ -313,7 +321,17 @@ static void touch_task(void *pvParameters)
             ESP_LOGI(TAG, "Touch: raw(%d,%d) -> display(%d,%d)", 
                      raw_x, raw_y, disp_x, disp_y);
             
-            // Here you would handle the touch event for your UI
+            // Debug overlay: draw raw/mapped coordinates so we can visually
+            // verify calibration. Draw small squares on screen for quick
+            // verification. This is active in debug builds and helps
+            // us tune the mapping for GT9271.
+            // Raw raw->display mapping using default mapping (no transform)
+            uint16_t raw_disp_x = 0, raw_disp_y = 0;
+            // Compute raw->display mapping using raw bounds if available
+            cal_transform(raw_x, raw_y, &raw_disp_x, &raw_disp_y);
+            // Draw raw point (magenta) and computed mapped (yellow)
+            draw_crosshair(raw_disp_x, raw_disp_y, 10, CAL_COLOR_CURSOR);
+            draw_crosshair(disp_x, disp_y, 10, CAL_COLOR_CAPTURED);
             // For now, just log it
         }
     }

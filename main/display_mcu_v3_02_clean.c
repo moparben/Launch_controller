@@ -229,6 +229,39 @@ static esp_err_t init_touch(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    // Attempt to probe address (0x5D or 0x14) by creating a temporary io
+    // and reading the PRODUCT ID register. This allows us to pick a correct
+    // address for GT9xx devices (GT911/GT9271) that may use one of two
+    // possible addresses depending on module wiring.
+    uint16_t candidate_addrs[] = { ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS, ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS_BACKUP };
+    bool found = false;
+    char pid[16] = {0};
+    for (int i = 0; i < 2 && !found; ++i) {
+        tp_io_config.dev_addr = candidate_addrs[i];
+        esp_lcd_panel_io_handle_t probe_io = NULL;
+        if (esp_lcd_new_panel_io_i2c_v2(local_i2c_bus, &tp_io_config, &probe_io) == ESP_OK && probe_io) {
+            // Try reading product ID
+            uint8_t buf[8];
+            esp_err_t r = esp_lcd_panel_io_rx_param(probe_io, ESP_LCD_TOUCH_GT911_PRODUCT_ID_REG, buf, sizeof(buf));
+            if (r == ESP_OK) {
+                // Basic check: bytes look like 4-6 ASCII characters or '91'/'9271'
+                size_t len = sizeof(buf);
+                if (len > sizeof(pid) - 1) len = sizeof(pid) - 1;
+                for (size_t k = 0; k < len; ++k) pid[k] = (buf[k] >= 32 && buf[k] < 127) ? buf[k] : '.';
+                pid[len] = '\0';
+                ESP_LOGI(TAG, "Probe address 0x%02X: product id approx '%s'", candidate_addrs[i], pid);
+                // Use the first successful read
+                tp_io_config.dev_addr = candidate_addrs[i];
+                found = true;
+            }
+            // Clean temp io handle
+            esp_lcd_panel_io_del(probe_io);
+        }
+    }
+    // If not found, fall back to default (value in tp_io_config set earlier: 0x5D) and log
+    if (!found) {
+        ESP_LOGW(TAG, "GT9xx probe failed - using default addr 0x%02X", tp_io_config.dev_addr);
+    }
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c_v2(local_i2c_bus, &tp_io_config, &tp_io_handle));
     
     esp_lcd_touch_config_t tp_cfg = {
@@ -330,8 +363,10 @@ static void touch_task(void *pvParameters)
             // Compute raw->display mapping using raw bounds if available
             cal_transform(raw_x, raw_y, &raw_disp_x, &raw_disp_y);
             // Draw raw point (magenta) and computed mapped (green) using calibration helper
-            cal_debug_draw_point(raw_disp_x, raw_disp_y, false);
-            cal_debug_draw_point(disp_x, disp_y, true);
+            if (cal_get_overlay()) {
+                cal_debug_draw_point(raw_disp_x, raw_disp_y, false);
+                cal_debug_draw_point(disp_x, disp_y, true);
+            }
             // For now, just log it
         }
     }

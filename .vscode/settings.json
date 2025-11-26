@@ -5,7 +5,7 @@
       "args": [
         "-NoExit",
         "-File",
-        "C:\\esp32_projects\\display_controller\\setup_esp_idf_terminal.ps1"
+        "C:\\esp32_projects\\activate_idf.ps1"
       ],
       "icon": "chip"
     }
@@ -13,15 +13,15 @@
   "terminal.integrated.defaultProfile.windows": "ESP-IDF PowerShell",
   
   // ESP-IDF Extension Configuration
-  "idf.espIdfPath": "C:\\Users\\mopar\\.espressif\\esp-idf-v5.4.2",
-  "idf.pythonBinPath": "C:\\Users\\mopar\\.espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
-  "idf.toolsPath": "C:\\Users\\mopar\\.espressif",
+  "idf.espIdfPath": "C:\\esp32_projects\\esp_idf",
+  "idf.pythonBinPath": "C:\\esp32_projects\\Espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
+  "idf.toolsPath": "C:\\esp32_projects\\Espressif",
+  "idf.buildPath": "${workspaceFolder}/build",
+  "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig",
   "idf.port": "COM6",
   "idf.baudRate": "115200",
   "idf.flashBaudRate": "460800",
   "idf.monitorBaudRate": "115200",
-  "idf.customTerminalExecutable": "C:\\Users\\mopar\\.espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
-  "idf.customTerminalExecutableArgs": ["C:\\Users\\mopar\\.espressif\\esp-idf-v5.4.2\\tools\\idf.py"],
   "idf.enableIdfComponentManager": true,
   "idf.showOnboardingOnInit": false,
   "idf.openOcdConfigs": [

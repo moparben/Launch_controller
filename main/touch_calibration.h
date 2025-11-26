@@ -1,5 +1,5 @@
 /**
- * Simple Touch Calibration System for GT911 + JD9365 Display
+ * Simple Touch Calibration System for GT9xx (GT911/GT9271) + JD9365 Display
  * 
  * This is a clean, minimal implementation that:
  * 1. Shows 3 calibration targets (corners + center)
@@ -7,7 +7,13 @@
  * 3. Computes a simple affine transform
  * 4. Saves/loads calibration to NVS
  * 
- * The key insight: GT911 reports in native panel coordinates (1280x800)
+ * The key insight: Goodix GT9xx touch controllers may report native raw
+ * coordinates in device-specific ranges (not necessarily equal to the
+ * display pixel resolution). This calibration captures 3 points and
+ * computes an affine transform between the raw touch coordinates and
+ * display coordinates. If no calibration is present, the system will
+ * estimate raw ranges from observed touches to provide a reasonable
+ * default mapping.
  * but the display is rotated 90°, so we need to map touch to display coords.
  */
 
@@ -26,7 +32,10 @@ extern "C" {
 #define CAL_DISPLAY_WIDTH   800
 #define CAL_DISPLAY_HEIGHT  1280
 
-// Touch native dimensions (before rotation)  
+// These are defaults and used only when a calibrated transform isn't
+// available. For GT9xx devices the native raw ranges may differ — the
+// calibration implementation dynamically observes raw bounds and uses
+// those to compute a default mapping when required.
 #define CAL_TOUCH_WIDTH     1280
 #define CAL_TOUCH_HEIGHT    800
 
@@ -114,6 +123,13 @@ bool cal_process_touch(uint16_t raw_x, uint16_t raw_y);
  */
 bool cal_transform(uint16_t raw_x, uint16_t raw_y, 
                    uint16_t *disp_x, uint16_t *disp_y);
+
+/**
+ * Update observed raw min/max values (used for default mapping when no
+ * calibration saved). This will be called internally but may be exposed
+ * for debug.
+ */
+void cal_update_bounds(uint16_t raw_x, uint16_t raw_y);
 
 /**
  * Draw the current calibration screen

@@ -107,6 +107,13 @@ static void draw_crosshair(int cx, int cy, int size, uint16_t color)
     draw_filled_rect(cx - 3, cy - 3, cx + 3, cy + 3, 0xFFE0); // Yellow center
 }
 
+void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped)
+{
+    if (!panel_handle) return;
+    uint16_t color = mapped ? CAL_COLOR_CAPTURED : CAL_COLOR_CURSOR;
+    draw_crosshair(x, y, 12, color);
+}
+
 static void draw_circle_outline(int cx, int cy, int radius, uint16_t color)
 {
     // Simple circle using midpoint algorithm - draw as thick lines

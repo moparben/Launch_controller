@@ -329,9 +329,9 @@ static void touch_task(void *pvParameters)
             uint16_t raw_disp_x = 0, raw_disp_y = 0;
             // Compute raw->display mapping using raw bounds if available
             cal_transform(raw_x, raw_y, &raw_disp_x, &raw_disp_y);
-            // Draw raw point (magenta) and computed mapped (yellow)
-            draw_crosshair(raw_disp_x, raw_disp_y, 10, CAL_COLOR_CURSOR);
-            draw_crosshair(disp_x, disp_y, 10, CAL_COLOR_CAPTURED);
+            // Draw raw point (magenta) and computed mapped (green) using calibration helper
+            cal_debug_draw_point(raw_disp_x, raw_disp_y, false);
+            cal_debug_draw_point(disp_x, disp_y, true);
             // For now, just log it
         }
     }

@@ -159,6 +159,29 @@ static void draw_number(int x, int y, int num, uint16_t color)
 }
 
 // ============================================================================
+// Raw bounds tracking (for devices like GT9271 with unknown raw ranges)
+// ============================================================================
+
+static uint16_t observed_min_x = 0xFFFF;
+static uint16_t observed_max_x = 0x0000;
+static uint16_t observed_min_y = 0xFFFF;
+static uint16_t observed_max_y = 0x0000;
+
+void cal_update_bounds(uint16_t raw_x, uint16_t raw_y)
+{
+    if (raw_x < observed_min_x) observed_min_x = raw_x;
+    if (raw_x > observed_max_x) observed_max_x = raw_x;
+    if (raw_y < observed_min_y) observed_min_y = raw_y;
+    if (raw_y > observed_max_y) observed_max_y = raw_y;
+}
+
+// Return true if we have reasonable observed bounds (avoid defaults)
+static bool has_observed_bounds(void)
+{
+    return (observed_max_x > observed_min_x + 32) && (observed_max_y > observed_min_y + 32);
+}
+
+// ============================================================================
 // Transform computation
 // ============================================================================
 
@@ -254,6 +277,11 @@ esp_err_t cal_init(void)
     }
     
     ESP_LOGI(TAG, "No valid calibration found - will need calibration");
+    // Reset observed bounds
+    observed_min_x = 0xFFFF;
+    observed_min_y = 0xFFFF;
+    observed_max_x = 0x0000;
+    observed_max_y = 0x0000;
     return ESP_OK;
 }
 
@@ -315,6 +343,9 @@ bool cal_process_touch(uint16_t raw_x, uint16_t raw_y)
     cal_points[point_idx].touch_x = raw_x;
     cal_points[point_idx].touch_y = raw_y;
     cal_points[point_idx].captured = true;
+
+    // Update observed bounds so the default mapping can converge
+    cal_update_bounds(raw_x, raw_y);
     
     // Move to next state
     if (current_state == CAL_STATE_POINT_1) {
@@ -348,9 +379,23 @@ bool cal_transform(uint16_t raw_x, uint16_t raw_y, uint16_t *disp_x, uint16_t *d
     if (!disp_x || !disp_y) return false;
     
     if (!transform.valid) {
-        // Default transform: simple rotation (90° CCW)
-        // Touch native is 1280x800, display is 800x1280
-        // Typically: disp_x = touch_y, disp_y = touch_max_x - touch_x
+        // Default transform: try to map raw observed range to display
+        // If we have observed min/max bounds, use them; otherwise use
+        // the legacy CAL_TOUCH_WIDTH/CAL_TOUCH_HEIGHT mapping.
+        if (has_observed_bounds()) {
+            // Normalize raw coordinates to 0..1
+            float nx = (float)(raw_x - observed_min_x) / (float)(observed_max_x - observed_min_x);
+            float ny = (float)(raw_y - observed_min_y) / (float)(observed_max_y - observed_min_y);
+            // We assume touch axes are swapped from display (90deg CCW)
+            float fx = ny * (float)CAL_DISPLAY_WIDTH;
+            float fy = (1.0f - nx) * (float)CAL_DISPLAY_HEIGHT;
+            if (fx < 0) fx = 0; if (fx > CAL_DISPLAY_WIDTH - 1) fx = CAL_DISPLAY_WIDTH - 1;
+            if (fy < 0) fy = 0; if (fy > CAL_DISPLAY_HEIGHT - 1) fy = CAL_DISPLAY_HEIGHT - 1;
+            *disp_x = (uint16_t)(fx + 0.5f);
+            *disp_y = (uint16_t)(fy + 0.5f);
+            return false;
+        }
+        // Legacy fallback
         *disp_x = raw_y * CAL_DISPLAY_WIDTH / CAL_TOUCH_WIDTH;
         *disp_y = (CAL_TOUCH_WIDTH - raw_x) * CAL_DISPLAY_HEIGHT / CAL_TOUCH_WIDTH;
         return false;

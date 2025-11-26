@@ -202,7 +202,7 @@ static esp_err_t init_display(void)
 
 static esp_err_t init_touch(void)
 {
-    ESP_LOGI(TAG, "Initializing GT911 touch controller...");
+    ESP_LOGI(TAG, "Initializing GT9xx touch controller (GT911/GT9271)...");
     
     // Note: I2C bus is already initialized by JD9365 driver
     // We just need to create the touch panel handle
@@ -292,6 +292,9 @@ static void touch_task(void *pvParameters)
         if (touched && touch_cnt > 0) {
             uint16_t raw_x = touch_x[0];
             uint16_t raw_y = touch_y[0];
+
+            // Update observed raw bounds used by default mapping in calibration
+            cal_update_bounds(raw_x, raw_y);
             
             // Check if we're in calibration mode
             cal_state_t state = cal_get_state();
@@ -396,7 +399,7 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Display MCU v3.02 - Clean Minimal Version");
-    ESP_LOGI(TAG, "ESP32-P4 + Waveshare 10.1\" + GT911");
+    ESP_LOGI(TAG, "ESP32-P4 + Waveshare 10.1\" + GT9xx (GT911/GT9271)");
     ESP_LOGI(TAG, "========================================");
     
     // Initialize NVS (needed for calibration storage)

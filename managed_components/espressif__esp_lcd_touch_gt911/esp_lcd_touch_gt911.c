@@ -425,6 +425,20 @@ esp_err_t esp_lcd_touch_gt911_get_raw_resolution(esp_lcd_touch_handle_t tp, uint
     return ESP_OK;
 }
 
+esp_err_t esp_lcd_touch_gt911_get_product_id(esp_lcd_touch_handle_t tp, char *buf, size_t buf_len)
+{
+    if (!tp || !buf || buf_len == 0) return ESP_ERR_INVALID_ARG;
+    uint8_t tmp[8] = {0};
+    // Read a few bytes from product ID register
+    esp_err_t ret = touch_gt911_i2c_read(tp, ESP_LCD_TOUCH_GT911_PRODUCT_ID_REG, tmp, sizeof(tmp));
+    if (ret != ESP_OK) return ret;
+    // Copy to caller buffer
+    size_t copy_len = (buf_len - 1) < sizeof(tmp) ? (buf_len - 1) : sizeof(tmp);
+    memcpy(buf, tmp, copy_len);
+    buf[copy_len] = '\0';
+    return ESP_OK;
+}
+
 static esp_err_t touch_gt911_i2c_read(esp_lcd_touch_handle_t tp, uint16_t reg, uint8_t *data, uint8_t len)
 {
     assert(tp != NULL);

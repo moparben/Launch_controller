@@ -174,6 +174,7 @@ static uint16_t observed_max_x = 0x0000;
 static uint16_t observed_min_y = 0xFFFF;
 static uint16_t observed_max_y = 0x0000;
 static bool observed_bounds_reported = false;
+static bool overlay_enabled = true; // default: show overlay during debug
 
 void cal_update_bounds(uint16_t raw_x, uint16_t raw_y)
 {
@@ -198,6 +199,16 @@ void cal_set_bounds(uint16_t min_x, uint16_t max_x, uint16_t min_y, uint16_t max
         observed_bounds_reported = false; // permit logging once
         ESP_LOGI(TAG, "Calibration bounds seeded: X=%d..%d Y=%d..%d", observed_min_x, observed_max_x, observed_min_y, observed_max_y);
     }
+}
+
+void cal_set_overlay(bool enable)
+{
+    overlay_enabled = enable;
+}
+
+bool cal_get_overlay(void)
+{
+    return overlay_enabled;
 }
 
 // Return true if we have reasonable observed bounds (avoid defaults)

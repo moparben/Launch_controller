@@ -145,6 +145,12 @@ void cal_set_bounds(uint16_t min_x, uint16_t max_x, uint16_t min_y, uint16_t max
 void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped);
 
 /**
+ * Enable/disable the debug overlay for raw/mapped coordinates
+ */
+void cal_set_overlay(bool enable);
+bool cal_get_overlay(void);
+
+/**
  * Draw the current calibration screen
  * Should be called after cal_start() and after each cal_process_touch()
  */

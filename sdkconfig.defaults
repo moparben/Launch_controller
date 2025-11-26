@@ -1,4 +1,16 @@
 # ========================================
+# Custom Partition Table and SPIFFS
+# ========================================
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# SPIFFS Configuration
+CONFIG_SPIFFS_MAX_PARTITIONS=1
+CONFIG_SPIFFS_USE_MAGIC=y
+CONFIG_SPIFFS_USE_MAGIC_LENGTH=y
+
+# ========================================
 # LVGL Configuration  
 # ========================================
 CONFIG_LV_CONF_SKIP=y

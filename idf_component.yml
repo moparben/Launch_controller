@@ -7,3 +7,5 @@ dependencies:
   espressif/esp_lcd_ek79007: "^1.0.0"
   # LVGL graphics library
   lvgl/lvgl: "^9.2.0"
+  # TODO: Add JPEG support in future version
+  # espressif/esp_jpeg: "^1.0.0"

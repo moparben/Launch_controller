@@ -3,3 +3,4 @@ dependencies:
   waveshare/esp_lcd_jd9365_10_1: "^1.0.0"
   espressif/esp_lcd_touch: "^1.0.0"
   espressif/esp_lcd_touch_gt911: "^1.0.0"
+  espressif/i2c_bus: "^1.5.0"

@@ -25,6 +25,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
+#if __has_include("lvgl.h")
+#include "lvgl.h"
+#define HAVE_TOUCH_CAL_LVGL 1
+#else
+#define HAVE_TOUCH_CAL_LVGL 0
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -165,6 +171,15 @@ void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped);
  */
 void cal_set_overlay(bool enable);
 bool cal_get_overlay(void);
+#if HAVE_TOUCH_CAL_LVGL
+/**
+ * Register LVGL display handle with the calibration module.
+ * When registered, the calibration overlay will be rendered using LVGL
+ * APIs via lv_async_call which executes the overlay drawing inside the
+ * LVGL task context. Call this after LVGL+display are initialized.
+ */
+void cal_register_lvgl_display(lv_display_t *display);
+#endif
 
 /**
  * Draw the current calibration screen

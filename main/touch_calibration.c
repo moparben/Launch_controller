@@ -1,3 +1,4 @@
+/* removed early forward declaration */
 /**
  * Simple Touch Calibration System - Implementation
  * 
@@ -5,12 +6,17 @@
  */
 
 #include "touch_calibration.h"
+#if HAVE_TOUCH_CAL_LVGL
+#include "lvgl.h"
+#endif
 #include <string.h>
+#include <stdbool.h>
 #include <math.h>
 #include "esp_log.h"
 #include "esp_lcd_panel_ops.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -46,6 +52,21 @@ static cal_point_t cal_points[3] = {
       .touch_x = 0, .touch_y = 0, .captured = false }
 };
 
+#if HAVE_TOUCH_CAL_LVGL
+// Forward declarations and static handles for LVGL overlay usage.
+static lv_display_t *cal_lv_display;
+static lv_obj_t *cal_overlay;
+static lv_obj_t *cal_point_objs[3];
+static lv_obj_t *cal_number_labels[3];
+static lv_obj_t *cal_target_obj;
+
+static void cal_lvgl_destroy_overlay(void *arg);
+static void cal_lvgl_create_overlay(void *arg);
+static void cal_lvgl_update_overlay(void *arg);
+static void cal_lvgl_delete_obj_cb(lv_timer_t *t);
+void cal_register_lvgl_display(lv_display_t *display);
+#endif
+
 static touch_transform_t transform = {
     .ax = 0.0f, .bx = 1.0f, .cx = 0.0f,
     .ay = 1.0f, .by = 0.0f, .cy = 0.0f,
@@ -64,7 +85,7 @@ static uint32_t last_touch_time = 0;
 
 static void draw_filled_rect(int x0, int y0, int x1, int y1, uint16_t color)
 {
-    if (!panel_handle || !draw_finish_sem) return;
+    if (!panel_handle) return;
     
     // Clamp coordinates
     if (x0 < 0) x0 = 0;
@@ -74,7 +95,7 @@ static void draw_filled_rect(int x0, int y0, int x1, int y1, uint16_t color)
     if (x1 <= x0 || y1 <= y0) return;
     
     int width = x1 - x0;
-    int height = y1 - y0;
+    // int height = y1 - y0; // Removed unused variable
     
     // Allocate line buffer
     uint16_t *line = heap_caps_malloc(width * sizeof(uint16_t), MALLOC_CAP_DMA);
@@ -86,12 +107,53 @@ static void draw_filled_rect(int x0, int y0, int x1, int y1, uint16_t color)
     }
     
     // Draw line by line
-    for (int y = y0; y < y1; y++) {
-        esp_lcd_panel_draw_bitmap(panel_handle, x0, y, x1, y + 1, line);
-        xSemaphoreTake(draw_finish_sem, portMAX_DELAY);
+    #if CAL_APP_SOFTWARE_SWAP_XY
+    // App coordinate space is swapped; map app rect to hardware coordinates
+    // Hardware coords: hw_x = y, hw_y = x
+    int hw_x0 = y0;
+    int hw_x1 = y1;
+    int hw_y0 = x0;
+    int hw_y1 = x1;
+    if (hw_x1 <= hw_x0 || hw_y1 <= hw_y0) {
+        free(line);
+        return;
     }
-    
+    int hw_width = hw_x1 - hw_x0;
+    // Allocate a temp buffer of hw_width and fill with color
+    uint16_t *hw_line = heap_caps_malloc(hw_width * sizeof(uint16_t), MALLOC_CAP_DMA);
+    if (!hw_line) {
+        free(line);
+        return;
+    }
+    for (int i = 0; i < hw_width; i++) hw_line[i] = color;
+    for (int y = hw_y0; y < hw_y1; y++) {
+        esp_err_t r = esp_lcd_panel_draw_bitmap(panel_handle, hw_x0, y, hw_x1, y + 1, hw_line);
+        if (r != ESP_OK) {
+            ESP_LOGW(TAG, "draw_filled_rect: esp_lcd_panel_draw_bitmap failed: %s", esp_err_to_name(r));
+            break;
+        }
+        if (draw_finish_sem) {
+            if (xSemaphoreTake(draw_finish_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
+                ESP_LOGW(TAG, "draw_filled_rect: wait for draw finish timed out");
+            }
+        }
+    }
+    free(hw_line);
+    #else
+    for (int y = y0; y < y1; y++) {
+        esp_err_t r = esp_lcd_panel_draw_bitmap(panel_handle, x0, y, x1, y + 1, line);
+        if (r != ESP_OK) {
+            ESP_LOGW(TAG, "draw_filled_rect: esp_lcd_panel_draw_bitmap failed: %s", esp_err_to_name(r));
+            break;
+        }
+        if (draw_finish_sem) {
+            if (xSemaphoreTake(draw_finish_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
+                ESP_LOGW(TAG, "draw_filled_rect: wait for draw finish timed out");
+            }
+        }
+    }
     free(line);
+    #endif
 }
 
 static void draw_crosshair(int cx, int cy, int size, uint16_t color)
@@ -109,8 +171,45 @@ static void draw_crosshair(int cx, int cy, int size, uint16_t color)
 
 void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped)
 {
-    if (!panel_handle) return;
     uint16_t color = mapped ? CAL_COLOR_CAPTURED : CAL_COLOR_CURSOR;
+#if HAVE_TOUCH_CAL_LVGL
+    if (cal_lv_display) {
+        // Use LVGL overlay to draw ephemeral debug point
+        struct lv_debug_point_args {
+            uint16_t x, y;
+            lv_color_t color;
+        };
+        struct lv_debug_point_args *args = heap_caps_malloc(sizeof(*args), MALLOC_CAP_SPIRAM);
+        if (!args) return;
+        args->x = x;
+        args->y = y;
+        args->color = mapped ? lv_palette_main(LV_PALETTE_GREEN) : lv_palette_main(LV_PALETTE_RED);
+
+        void lv_debug_point_draw(void *ctx) {
+            struct lv_debug_point_args *a = (struct lv_debug_point_args*)ctx;
+            if (!cal_overlay) {
+                // create overlay then re-schedule update
+                cal_lvgl_create_overlay(NULL);
+            }
+            if (!cal_overlay) return;
+            lv_obj_t *p = lv_obj_create(cal_overlay);
+            lv_obj_set_size(p, 12, 12);
+            lv_obj_set_style_radius(p, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_color(p, a->color, 0);
+            lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+            lv_obj_set_pos(p, a->x - 6, a->y - 6);
+            // Delete after 400ms using a timer
+            lv_timer_t *del_t = lv_timer_create(cal_lvgl_delete_obj_cb, 400, p);
+            (void)del_t;
+            // Free arguments used for this async call
+            free(a);
+        }
+
+        lv_async_call(lv_debug_point_draw, args);
+        return;
+    }
+#endif
+    if (!panel_handle) return;
     draw_crosshair(x, y, 12, color);
 }
 
@@ -169,12 +268,117 @@ static void draw_number(int x, int y, int num, uint16_t color)
 // Raw bounds tracking (for devices like GT9271 with unknown raw ranges)
 // ============================================================================
 
+// Forward declaration for function used above
+static bool has_observed_bounds(void);
+
 static uint16_t observed_min_x = 0xFFFF;
 static uint16_t observed_max_x = 0x0000;
 static uint16_t observed_min_y = 0xFFFF;
 static uint16_t observed_max_y = 0x0000;
 static bool observed_bounds_reported = false;
-static bool overlay_enabled = true; // default: show overlay during debug
+static bool overlay_enabled = false; // default: don't show overlay; enable only during calibration
+
+#if HAVE_TOUCH_CAL_LVGL
+// When LVGL display is registered, calibration overlay will be created on
+// the LVGL screen layer via lv_async_call to avoid calling LVGL APIs from
+// non-LVGL tasks.
+static lv_display_t *cal_lv_display = NULL;
+static lv_obj_t *cal_overlay = NULL;
+static lv_obj_t *cal_point_objs[3] = { NULL, NULL, NULL };
+static lv_obj_t *cal_number_labels[3] = { NULL, NULL, NULL };
+static lv_obj_t *cal_target_obj = NULL;
+
+static void cal_lvgl_destroy_overlay(void *arg)
+{
+    LV_UNUSED(arg);
+    if (!cal_overlay) return;
+    lv_obj_del_async(cal_overlay);
+    cal_overlay = NULL;
+    for (int i = 0; i < 3; i++) {
+        cal_point_objs[i] = NULL;
+        cal_number_labels[i] = NULL;
+    }
+    cal_target_obj = NULL;
+}
+
+static void cal_lvgl_create_overlay(void *arg)
+{
+    LV_UNUSED(arg);
+    if (!cal_lv_display) return;
+    if (cal_overlay) return; // already created
+
+    lv_obj_t *sys_layer = lv_display_get_layer_sys(cal_lv_display);
+    cal_overlay = lv_obj_create(sys_layer);
+    lv_obj_set_size(cal_overlay, CAL_DISPLAY_WIDTH, CAL_DISPLAY_HEIGHT);
+    lv_obj_set_style_bg_color(cal_overlay, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_bg_opa(cal_overlay, LV_OPA_20, 0);
+    lv_obj_add_flag(cal_overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
+
+    // Create point objects and labels
+    for (int i = 0; i < 3; i++) {
+        cal_point_objs[i] = lv_obj_create(cal_overlay);
+        lv_obj_set_size(cal_point_objs[i], 8, 8);
+        lv_obj_set_style_radius(cal_point_objs[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(cal_point_objs[i], lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(cal_point_objs[i], LV_OPA_COVER, 0);
+        lv_obj_clear_flag(cal_point_objs[i], LV_OBJ_FLAG_CLICKABLE);
+
+        cal_number_labels[i] = lv_label_create(cal_overlay);
+        lv_label_set_text_fmt(cal_number_labels[i], "%d", i + 1);
+        lv_obj_set_style_text_color(cal_number_labels[i], lv_color_white(), 0);
+    }
+
+    // Create a target marker for the current point
+    cal_target_obj = lv_obj_create(cal_overlay);
+    lv_obj_set_size(cal_target_obj, 50, 50);
+    lv_obj_set_style_border_color(cal_target_obj, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_width(cal_target_obj, 2, 0);
+    lv_obj_set_style_radius(cal_target_obj, LV_RADIUS_CIRCLE, 0);
+    lv_obj_clear_flag(cal_target_obj, LV_OBJ_FLAG_CLICKABLE);
+    ESP_LOGI(TAG, "cal_lvgl_create_overlay: created overlay on display=%p", (void*)cal_lv_display);
+}
+
+static void cal_lvgl_update_overlay(void *arg)
+{
+    LV_UNUSED(arg);
+    if (!cal_overlay || !cal_lv_display) return;
+
+    // Update placements and colors for points
+    for (int i = 0; i < 3; i++) {
+        cal_point_t *pt = &cal_points[i];
+        if (!cal_point_objs[i]) continue;
+        lv_obj_set_pos(cal_point_objs[i], pt->disp_x - 4, pt->disp_y - 4);
+        lv_obj_set_pos(cal_number_labels[i], pt->disp_x - 8, pt->disp_y + 12);
+        if (pt->captured) {
+            lv_obj_set_style_bg_color(cal_point_objs[i], lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else {
+            lv_obj_set_style_bg_color(cal_point_objs[i], lv_palette_darken(LV_PALETTE_GREY, 2), 0);
+        }
+    }
+
+    // Highlight current target
+    int current_idx = current_state - CAL_STATE_POINT_1;
+    if (current_idx >= 0 && current_idx < 3 && cal_target_obj) {
+        cal_point_t *target = &cal_points[current_idx];
+        lv_obj_set_pos(cal_target_obj, target->disp_x - 25, target->disp_y - 25);
+        lv_obj_set_style_border_color(cal_target_obj, lv_palette_main(LV_PALETTE_ORANGE), 0);
+    ESP_LOGI(TAG, "cal_lvgl_update_overlay: updated overlay state (current=%d)", current_idx);
+    }
+}
+
+// Timer-based delete callback to remove temporary LVGL debug objects
+static void cal_lvgl_delete_obj_cb(lv_timer_t *t)
+{
+    lv_obj_t *obj = (lv_obj_t *)lv_timer_get_user_data(t);
+    if (obj) lv_obj_del(obj);
+    lv_timer_del(t);
+}
+
+void cal_register_lvgl_display(lv_display_t *display)
+{
+    cal_lv_display = display;
+}
+#endif // HAVE_TOUCH_CAL_LVGL
 
 void cal_update_bounds(uint16_t raw_x, uint16_t raw_y)
 {
@@ -336,14 +540,31 @@ void cal_start(void)
     current_state = CAL_STATE_POINT_1;
     last_touch_time = 0;
     
-    // Draw initial calibration screen
+    // Enable overlay for calibration UI and draw initial calibration screen
+    cal_set_overlay(true);
+    // If LVGL is registered, schedule overlay creation; else draw sync
+#if HAVE_TOUCH_CAL_LVGL
+    if (cal_lv_display) {
+        lv_async_call(cal_lvgl_create_overlay, NULL);
+        lv_async_call(cal_lvgl_update_overlay, NULL);
+    } else {
+        cal_draw_screen();
+    }
+#else
     cal_draw_screen();
+#endif
 }
 
 void cal_cancel(void)
 {
     ESP_LOGI(TAG, "Calibration cancelled");
     current_state = CAL_STATE_IDLE;
+    cal_set_overlay(false);
+#if HAVE_TOUCH_CAL_LVGL
+    if (cal_lv_display && cal_overlay) {
+        lv_async_call(cal_lvgl_destroy_overlay, NULL);
+    }
+#endif
 }
 
 cal_state_t cal_get_state(void)
@@ -398,6 +619,13 @@ bool cal_process_touch(uint16_t raw_x, uint16_t raw_y)
             if (cal_save() == ESP_OK) {
                 ESP_LOGI(TAG, "Calibration saved to NVS");
             }
+            /* Disable overlay after successful calibration */
+            cal_set_overlay(false);
+#if HAVE_TOUCH_CAL_LVGL
+            if (cal_lv_display && cal_overlay) {
+                lv_async_call(cal_lvgl_destroy_overlay, NULL);
+            }
+#endif
         } else {
             ESP_LOGE(TAG, "Transform computation failed - restarting calibration");
             cal_start();
@@ -406,7 +634,16 @@ bool cal_process_touch(uint16_t raw_x, uint16_t raw_y)
     }
     
     // Redraw screen for next point
+    // If LVGL overlay is enabled and LVGL is registered, schedule an async update
+#if HAVE_TOUCH_CAL_LVGL
+    if (cal_get_overlay() && cal_lv_display) {
+        lv_async_call(cal_lvgl_update_overlay, NULL);
+    } else {
+        cal_draw_screen();
+    }
+#else
     cal_draw_screen();
+#endif
     return true;
 }
 
@@ -422,18 +659,43 @@ bool cal_transform(uint16_t raw_x, uint16_t raw_y, uint16_t *disp_x, uint16_t *d
             // Normalize raw coordinates to 0..1
             float nx = (float)(raw_x - observed_min_x) / (float)(observed_max_x - observed_min_x);
             float ny = (float)(raw_y - observed_min_y) / (float)(observed_max_y - observed_min_y);
-            // We assume touch axes are swapped from display (90deg CCW)
+            // Map raw normalized axes to display axes without swapping.
+            // With landscape orientation and our defaults the touch axes align
+            // with the display axis; therefore use straight mapping.
+            #if CAL_APP_SOFTWARE_SWAP_XY
+            // Raw axes are native portrait; app expects landscape, so swap
             float fx = ny * (float)CAL_DISPLAY_WIDTH;
-            float fy = (1.0f - nx) * (float)CAL_DISPLAY_HEIGHT;
-            if (fx < 0) fx = 0; if (fx > CAL_DISPLAY_WIDTH - 1) fx = CAL_DISPLAY_WIDTH - 1;
-            if (fy < 0) fy = 0; if (fy > CAL_DISPLAY_HEIGHT - 1) fy = CAL_DISPLAY_HEIGHT - 1;
+            float fy = nx * (float)CAL_DISPLAY_HEIGHT;
+            #else
+            float fx = nx * (float)CAL_DISPLAY_WIDTH;
+            float fy = ny * (float)CAL_DISPLAY_HEIGHT;
+            #endif
+            // normalized clamps (block-form below)
+                        if (fx < 0) {
+                            fx = 0;
+                        }
+                        if (fx > CAL_DISPLAY_WIDTH - 1) {
+                            fx = CAL_DISPLAY_WIDTH - 1;
+                        }
+                        if (fy < 0) {
+                            fy = 0;
+                        }
+                        if (fy > CAL_DISPLAY_HEIGHT - 1) {
+                            fy = CAL_DISPLAY_HEIGHT - 1;
+                        }
+            // normalized clamps (block-form above)
             *disp_x = (uint16_t)(fx + 0.5f);
             *disp_y = (uint16_t)(fy + 0.5f);
             return false;
         }
-        // Legacy fallback
-        *disp_x = raw_y * CAL_DISPLAY_WIDTH / CAL_TOUCH_WIDTH;
-        *disp_y = (CAL_TOUCH_WIDTH - raw_x) * CAL_DISPLAY_HEIGHT / CAL_TOUCH_WIDTH;
+        // Legacy fallback: assume raw axes line up with display axes
+        #if CAL_APP_SOFTWARE_SWAP_XY
+        *disp_x = raw_y * CAL_DISPLAY_WIDTH / CAL_TOUCH_HEIGHT;
+        *disp_y = raw_x * CAL_DISPLAY_HEIGHT / CAL_TOUCH_WIDTH;
+        #else
+        *disp_x = raw_x * CAL_DISPLAY_WIDTH / CAL_TOUCH_WIDTH;
+        *disp_y = raw_y * CAL_DISPLAY_HEIGHT / CAL_TOUCH_HEIGHT;
+        #endif
         return false;
     }
     
@@ -454,6 +716,13 @@ bool cal_transform(uint16_t raw_x, uint16_t raw_y, uint16_t *disp_x, uint16_t *d
 
 void cal_draw_screen(void)
 {
+#if HAVE_TOUCH_CAL_LVGL
+    if (cal_lv_display && cal_get_overlay()) {
+        if (!cal_overlay) lv_async_call(cal_lvgl_create_overlay, NULL);
+        lv_async_call(cal_lvgl_update_overlay, NULL);
+        return;
+    }
+#endif
     if (!panel_handle) return;
     
     // Clear screen to dark blue
@@ -617,6 +886,11 @@ esp_err_t cal_clear(void)
     
     transform.valid = false;
     ESP_LOGI(TAG, "Calibration cleared from NVS");
+#if HAVE_TOUCH_CAL_LVGL
+    if (cal_lv_display && cal_overlay) {
+        lv_async_call(cal_lvgl_destroy_overlay, NULL);
+    }
+#endif
     return ESP_OK;
 }
 

@@ -59,7 +59,7 @@ dependencies:
       type: service
     version: 9.2.2
   waveshare/esp_lcd_jd9365_10_1:
-    component_hash: 148d03ade699a7fa0f08c98e86c1df3d32e92580fac421c04e0ee5b779e86267
+    component_hash: 6c1336b93a37df2b5be42c49c4c364d0bacdbf96f053a934f881349457fac679
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
@@ -77,7 +77,7 @@ dependencies:
       type: service
     targets:
     - esp32p4
-    version: 1.0.3
+    version: 1.0.4
 direct_dependencies:
 - espressif/esp_lcd_touch
 - espressif/esp_lcd_touch_gt911

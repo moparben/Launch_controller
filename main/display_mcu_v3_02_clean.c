@@ -88,7 +88,7 @@ SemaphoreHandle_t draw_finish_sem = NULL;
 static esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
 static esp_lcd_panel_io_handle_t mipi_dbi_io = NULL;
 static esp_ldo_channel_handle_t ldo_mipi_phy = NULL;
-static esp_lcd_touch_handle_t touch_handle = NULL;
+esp_lcd_touch_handle_t touch_handle = NULL;
 // ============================================================================
 // DMA Draw Complete Callback
 // ============================================================================
@@ -109,7 +109,7 @@ static IRAM_ATTR bool on_draw_complete(esp_lcd_panel_handle_t panel,
 // Display Initialization
 // ============================================================================
 
-static esp_err_t init_display(void)
+esp_err_t init_display(void)
 {
     ESP_LOGI(TAG, "Initializing MIPI-DSI display...");
     
@@ -295,7 +295,7 @@ static void display_draw_filled_rect(int x0, int y0, int x1, int y1, uint16_t co
 // Touch Controller Initialization
 // ============================================================================
 
-static esp_err_t init_touch(void)
+esp_err_t init_touch(void)
 {
     ESP_LOGI(TAG, "Initializing GT9xx touch controller (GT911/GT9271)...");
     
@@ -406,18 +406,27 @@ static esp_err_t init_touch(void)
 // Touch Task - Simple polling with calibration
 // ============================================================================
 
-static void touch_task(void *pvParameters)
+void touch_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Touch task started");
     
     // Initialize calibration system
     cal_init();
     
-    // Start calibration if no valid calibration exists
+    // Optionally, start calibration if no valid calibration exists. By
+    // default we avoid automatically entering calibration on boot since it
+    // hijacks the UI and blocks other development interaction. To keep the
+    // previous behavior, set CAL_AUTO_START_ON_BOOT to 1 in the build.
+#if defined(CAL_AUTO_START_ON_BOOT) && (CAL_AUTO_START_ON_BOOT == 1)
     if (!cal_is_valid()) {
-        ESP_LOGI(TAG, "No valid calibration - starting calibration sequence");
+        ESP_LOGI(TAG, "No valid calibration - starting calibration sequence (auto-start)");
         cal_start();
     }
+#else
+    if (!cal_is_valid()) {
+        ESP_LOGI(TAG, "No valid calibration (auto-start disabled). Press the 'Calibrate' button or invoke cal_start() from UI to begin calibration.");
+    }
+#endif
     
     uint16_t touch_x[5], touch_y[5];
     uint16_t touch_strength[5];
@@ -486,7 +495,7 @@ static void fill_screen(uint16_t color)
     display_draw_filled_rect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, color);
 }
 
-static void draw_test_pattern(void)
+void draw_test_pattern(void)
 {
     ESP_LOGI(TAG, "Drawing test pattern...");
     
@@ -523,6 +532,11 @@ static void draw_test_pattern(void)
 // Main Application
 // ============================================================================
 
+/* If BUILD_DISPLAY_V3_03 is defined, the app_main from display_mcu_v3_03.c
+ * will be used instead. Keep the init and helper functions in this file and
+ * only exclude the second app_main to avoid duplicate entry points.
+ */
+#ifndef BUILD_DISPLAY_V3_03
 void app_main(void)
 {
     ESP_LOGI(TAG, "========================================");
@@ -566,3 +580,5 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
+#endif /* BUILD_DISPLAY_V3_03 */

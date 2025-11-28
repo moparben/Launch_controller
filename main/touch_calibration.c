@@ -52,20 +52,9 @@ static cal_point_t cal_points[3] = {
       .touch_x = 0, .touch_y = 0, .captured = false }
 };
 
-#if HAVE_TOUCH_CAL_LVGL
-// Forward declarations and static handles for LVGL overlay usage.
-static lv_display_t *cal_lv_display;
-static lv_obj_t *cal_overlay;
-static lv_obj_t *cal_point_objs[3];
-static lv_obj_t *cal_number_labels[3];
-static lv_obj_t *cal_target_obj;
-
-static void cal_lvgl_destroy_overlay(void *arg);
-static void cal_lvgl_create_overlay(void *arg);
-static void cal_lvgl_update_overlay(void *arg);
-static void cal_lvgl_delete_obj_cb(lv_timer_t *t);
-void cal_register_lvgl_display(lv_display_t *display);
-#endif
+/* LVGL overlay forward declarations were moved to the implementation block
+ * further below to avoid duplicate/forward declarations and reduce
+ * preprocessor complexity. */
 
 static touch_transform_t transform = {
     .ax = 0.0f, .bx = 1.0f, .cx = 0.0f,
@@ -169,49 +158,8 @@ static void draw_crosshair(int cx, int cy, int size, uint16_t color)
     draw_filled_rect(cx - 3, cy - 3, cx + 3, cy + 3, 0xFFE0); // Yellow center
 }
 
-void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped)
-{
-    uint16_t color = mapped ? CAL_COLOR_CAPTURED : CAL_COLOR_CURSOR;
-#if HAVE_TOUCH_CAL_LVGL
-    if (cal_lv_display) {
-        // Use LVGL overlay to draw ephemeral debug point
-        struct lv_debug_point_args {
-            uint16_t x, y;
-            lv_color_t color;
-        };
-        struct lv_debug_point_args *args = heap_caps_malloc(sizeof(*args), MALLOC_CAP_SPIRAM);
-        if (!args) return;
-        args->x = x;
-        args->y = y;
-        args->color = mapped ? lv_palette_main(LV_PALETTE_GREEN) : lv_palette_main(LV_PALETTE_RED);
-
-        void lv_debug_point_draw(void *ctx) {
-            struct lv_debug_point_args *a = (struct lv_debug_point_args*)ctx;
-            if (!cal_overlay) {
-                // create overlay then re-schedule update
-                cal_lvgl_create_overlay(NULL);
-            }
-            if (!cal_overlay) return;
-            lv_obj_t *p = lv_obj_create(cal_overlay);
-            lv_obj_set_size(p, 12, 12);
-            lv_obj_set_style_radius(p, LV_RADIUS_CIRCLE, 0);
-            lv_obj_set_style_bg_color(p, a->color, 0);
-            lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
-            lv_obj_set_pos(p, a->x - 6, a->y - 6);
-            // Delete after 400ms using a timer
-            lv_timer_t *del_t = lv_timer_create(cal_lvgl_delete_obj_cb, 400, p);
-            (void)del_t;
-            // Free arguments used for this async call
-            free(a);
-        }
-
-        lv_async_call(lv_debug_point_draw, args);
-        return;
-    }
-#endif
-    if (!panel_handle) return;
-    draw_crosshair(x, y, 12, color);
-}
+/* cal_debug_draw_point is now defined further below after the LVGL overlay implementation
+ * so it can reference the static LVGL overlay variables and functions. */
 
 static void draw_circle_outline(int cx, int cy, int radius, uint16_t color)
 {
@@ -378,6 +326,60 @@ void cal_register_lvgl_display(lv_display_t *display)
 {
     cal_lv_display = display;
 }
+#if HAVE_TOUCH_CAL_LVGL
+void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped)
+{
+    uint16_t color = mapped ? CAL_COLOR_CAPTURED : CAL_COLOR_CURSOR;
+    if (cal_lv_display) {
+        // Use LVGL overlay to draw ephemeral debug point
+        struct lv_debug_point_args {
+            uint16_t x, y;
+            lv_color_t color;
+        };
+        struct lv_debug_point_args *args = heap_caps_malloc(sizeof(*args), MALLOC_CAP_SPIRAM);
+        if (!args) return;
+        args->x = x;
+        args->y = y;
+        args->color = mapped ? lv_palette_main(LV_PALETTE_GREEN) : lv_palette_main(LV_PALETTE_RED);
+
+        void lv_debug_point_draw(void *ctx) {
+#if CAL_FORCE_DISABLE_OVERLAY
+            (void)x; (void)y; (void)mapped; return;
+#endif
+            struct lv_debug_point_args *a = (struct lv_debug_point_args*)ctx;
+            if (!cal_overlay) {
+                // create overlay then re-schedule update
+                cal_lvgl_create_overlay(NULL);
+            }
+            if (!cal_overlay) return;
+            lv_obj_t *p = lv_obj_create(cal_overlay);
+            lv_obj_set_size(p, 12, 12);
+            lv_obj_set_style_radius(p, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_color(p, a->color, 0);
+            lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+            lv_obj_set_pos(p, a->x - 6, a->y - 6);
+            // Delete after 400ms using a timer
+            lv_timer_t *del_t = lv_timer_create(cal_lvgl_delete_obj_cb, 400, p);
+            (void)del_t;
+            // Free arguments used for this async call
+            free(a);
+        }
+
+        lv_async_call(lv_debug_point_draw, args);
+        return;
+    }
+    if (!panel_handle) return;
+    draw_crosshair(x, y, 12, color);
+}
+#else
+/* Non-LVGL case: simple draw via panel framebuffer */
+void cal_debug_draw_point(uint16_t x, uint16_t y, bool mapped)
+{
+    uint16_t color = mapped ? CAL_COLOR_CAPTURED : CAL_COLOR_CURSOR;
+    if (!panel_handle) return;
+    draw_crosshair(x, y, 12, color);
+}
+#endif
 #endif // HAVE_TOUCH_CAL_LVGL
 
 void cal_update_bounds(uint16_t raw_x, uint16_t raw_y)
@@ -716,6 +718,9 @@ bool cal_transform(uint16_t raw_x, uint16_t raw_y, uint16_t *disp_x, uint16_t *d
 
 void cal_draw_screen(void)
 {
+#if CAL_FORCE_DISABLE_OVERLAY
+    return;
+#endif
 #if HAVE_TOUCH_CAL_LVGL
     if (cal_lv_display && cal_get_overlay()) {
         if (!cal_overlay) lv_async_call(cal_lvgl_create_overlay, NULL);
@@ -724,10 +729,10 @@ void cal_draw_screen(void)
     }
 #endif
     if (!panel_handle) return;
-    
     // Clear screen to dark blue
     draw_filled_rect(0, 0, CAL_DISPLAY_WIDTH, CAL_DISPLAY_HEIGHT, 0x0010);
     
+    /* overlays are already disabled by CAL_FORCE_DISABLE_OVERLAY */
     if (current_state == CAL_STATE_COMPLETE) {
         // Show success screen
         draw_filled_rect(CAL_DISPLAY_WIDTH/2 - 150, CAL_DISPLAY_HEIGHT/2 - 50,
@@ -736,6 +741,10 @@ void cal_draw_screen(void)
         ESP_LOGI(TAG, "Calibration complete! Touch anywhere to continue.");
         return;
     }
+    #if CAL_FORCE_DISABLE_OVERLAY
+        (void)panel_handle;
+        return;
+    #endif
     
     if (current_state == CAL_STATE_IDLE) {
         // Show "Touch to calibrate" message area

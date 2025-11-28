@@ -61,6 +61,15 @@ extern "C" {
 #define CAL_TOUCH_WIDTH     800
 #define CAL_TOUCH_HEIGHT    1280
 
+// Compile-time control to forcefully disable calibration overlays entirely.
+// Set CAL_FORCE_DISABLE_OVERLAY to 1 to ensure no overlay is ever drawn.
+#ifndef CAL_FORCE_DISABLE_OVERLAY
+// Default to 1 to help with debugging overlay-related issues during dev —
+// this forces overlays to remain disabled. Change to 0 or set the macro
+// at your build time to allow overlays.
+#define CAL_FORCE_DISABLE_OVERLAY 1
+#endif
+
 // Calibration point structure
 typedef struct {
     // Display coordinates (where target is drawn)

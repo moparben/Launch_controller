@@ -39,8 +39,12 @@ extern "C" {
 // Display dimensions (portrait orientation)
 // Align calibration defaults with the display so the system
 // uses the same width/height for mapping and transforms.
+#ifndef CAL_DISPLAY_WIDTH
 #define CAL_DISPLAY_WIDTH   800
+#endif
+#ifndef CAL_DISPLAY_HEIGHT
 #define CAL_DISPLAY_HEIGHT  1280
+#endif
 
 // If the panel driver does not support a hardware swap of X/Y, we can
 // perform a software swap in the application so the user-facing

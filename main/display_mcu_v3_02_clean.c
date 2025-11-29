@@ -544,11 +544,12 @@ void draw_test_pattern(void)
 // Main Application
 // ============================================================================
 
-/* If BUILD_DISPLAY_V3_03 is defined, the app_main from display_mcu_v3_03.c
- * will be used instead. Keep the init and helper functions in this file and
- * only exclude the second app_main to avoid duplicate entry points.
+/* If BUILD_DISPLAY_V3_03 or BUILD_DISPLAY_V3_04 are defined, the app_main
+ * from display_mcu_v3_03.c / display_mcu_v3_04.c will be used instead.
+ * Keep the init and helper functions in this file and only exclude the
+ * second app_main to avoid duplicate entry points.
  */
-#ifndef BUILD_DISPLAY_V3_03
+#if !defined(BUILD_DISPLAY_V3_03) && !defined(BUILD_DISPLAY_V3_04)
 void app_main(void)
 {
     ESP_LOGI(TAG, "========================================");
@@ -593,4 +594,4 @@ void app_main(void)
     }
 }
 
-#endif /* BUILD_DISPLAY_V3_03 */
+#endif /* BUILD_DISPLAY_V3_03 || BUILD_DISPLAY_V3_04 */

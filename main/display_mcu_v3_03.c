@@ -78,26 +78,58 @@ static void example_increase_lvgl_tick(void *arg);
 static void example_lvgl_port_task(void *arg);
 static void lvgl_touch_read_cb(lv_indev_t * drv, lv_indev_data_t *data);
 
-// Task that waits for the draw finish semaphore then notifies LVGL
-static void lvgl_flush_notify_task(void *arg)
+/* Wait callback for LVGL that uses the draw finish semaphore directly.
+ * This will be executed in the LVGL thread while it is inside
+ * `wait_for_flushing()` so it must not attempt to grab the lvgl_api_lock.
+ */
+static void example_lvgl_flush_wait_cb(lv_display_t *disp)
 {
-    lv_display_t *disp = (lv_display_t *)arg;
-    while (1) {
-        if (xSemaphoreTake(draw_finish_sem, portMAX_DELAY) == pdTRUE) {
-            if (disp) {
-                _lock_acquire(&lvgl_api_lock);
-                lv_display_flush_ready(disp);
-                _lock_release(&lvgl_api_lock);
-            }
-        }
+    ESP_LOGD(TAG, "example_lvgl_flush_wait_cb: entering (disp=%p)", (void*)disp);
+    if (!draw_finish_sem) {
+        /* No semaphore available -> fall back to a short wait */
+        vTaskDelay(pdMS_TO_TICKS(10));
+        return;
     }
+    /* Wait for the draw completion reported by the panel driver ISR */
+    if (xSemaphoreTake(draw_finish_sem, portMAX_DELAY) != pdTRUE) {
+        /* If the wait fails for some reason, give the task a small delay */
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    ESP_LOGD(TAG, "example_lvgl_flush_wait_cb: leaving (disp=%p)", (void*)disp);
 }
 
 static void example_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     esp_lcd_panel_handle_t panel = lv_display_get_user_data(disp);
-    if (!panel) return;
-    esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    if (!panel) {
+        ESP_LOGW(TAG, "example_lvgl_flush_cb called with NULL panel");
+        return;
+    }
+    ESP_LOGD(TAG, "example_lvgl_flush_cb: area=(%d,%d)-(%d,%d) panel=%p px_map=%p", (int)area->x1, (int)area->y1, (int)area->x2, (int)area->y2, (void*)panel, (void*)px_map);
+    if (!area || !px_map) {
+        ESP_LOGW(TAG, "example_lvgl_flush_cb: invalid arguments (area/px_map)");
+        return;
+    }
+    esp_err_t r = esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    if (r != ESP_OK) {
+        ESP_LOGW(TAG, "example_lvgl_flush_cb: esp_lcd_panel_draw_bitmap failed: %s", esp_err_to_name(r));
+    }
+    // Some panel drivers may not reliably call the color transfer "done" callback
+    // (on_color_trans_done) for every draw operation. To avoid LVGL blocking in
+    // wait_for_flushing(), ensure we always signal completion via the draw
+    // semaphore or directly notify LVGL if no semaphore exists.
+    if (draw_finish_sem) {
+        ESP_LOGD(TAG, "example_lvgl_flush_cb: giving draw_finish_sem to notify LVGL");
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        xSemaphoreGive(draw_finish_sem);
+        (void)xHigherPriorityTaskWoken;
+    } else {
+        // As a last resort, directly notify LVGL that this flush is done.
+        _lock_acquire(&lvgl_api_lock);
+        lv_display_flush_ready(disp);
+        _lock_release(&lvgl_api_lock);
+    }
+    ESP_LOGD(TAG, "example_lvgl_flush_cb: done (r=%d)", r);
 }
 
 static void example_increase_lvgl_tick(void *arg)
@@ -126,7 +158,11 @@ static void lvgl_touch_read_cb(lv_indev_t * drv, lv_indev_data_t *data)
     uint16_t touch_x[5], touch_y[5];
     uint16_t touch_strength[5];
     uint8_t touch_cnt = 0;
-    esp_lcd_touch_read_data(touch_handle);
+    esp_err_t touch_ret = esp_lcd_touch_read_data(touch_handle);
+    if (touch_ret != ESP_OK) {
+        data->state = LV_INDEV_STATE_REL;
+        return;
+    }
     bool touched = esp_lcd_touch_get_coordinates(touch_handle, touch_x, touch_y, touch_strength, &touch_cnt, 5);
     if (touched && touch_cnt > 0) {
         uint16_t raw_x = touch_x[0];
@@ -262,6 +298,11 @@ void app_main(void)
     void *buf2 = NULL; // single buffer to save RAM
     lv_display_set_buffers(display, buf1, buf2, draw_buffer_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, example_lvgl_flush_cb);
+    /* Register a flush wait callback that waits on the draw completion semaphore
+     * This avoids the notifier task deadlock and makes using the driver ISR
+     * semaphore the canonical path for waiting on draw completion.
+     */
+    lv_display_set_flush_wait_cb(display, example_lvgl_flush_wait_cb);
 
     // Instead of registering an ISR callback for DPI event (which requires
     // callbacks to be IRAM safe), use our semaphore-driven task to notify
@@ -316,20 +357,34 @@ void app_main(void)
             _lock_release(&lvgl_api_lock);
 
     #if HAVE_TOUCH_CAL_LVGL && defined(CAL_OVERLAY_AUTO_REG) && (CAL_OVERLAY_AUTO_REG == 1)
-        // Inform calibration module that LVGL display exists so we can present
-        // calibration overlays using LVGL instead of synchronous panel draws.
-        // This registration is disabled by default to prevent unintended
-        // overlays and crashes. Define CAL_OVERLAY_AUTO_REG=1 in the build
-        // to opt-in to automatic overlay registration.
-        cal_register_lvgl_display(display);
+        /*
+         * Only register the LVGL display with the calibration overlay if overlays
+         * are not force-disabled at build time (CAL_FORCE_DISABLE_OVERLAY).
+         *
+         * This prevents accidental overlays being created in production builds.
+         */
+        #if defined(CAL_FORCE_DISABLE_OVERLAY) && (CAL_FORCE_DISABLE_OVERLAY == 1)
+            ESP_LOGW(TAG, "CAL_OVERLAY_AUTO_REG was enabled at build but overlays are force-disabled (CAL_FORCE_DISABLE_OVERLAY=1); skipping registration.");
+        #else
+            ESP_LOGI(TAG, "Registering LVGL display for calibration overlay (CAL_OVERLAY_AUTO_REG active).\n");
+            #if !defined(CAL_DISABLE_CALIBRATION) || (CAL_DISABLE_CALIBRATION == 0)
+                cal_register_lvgl_display(display);
+            #else
+                ESP_LOGW(TAG, "CAL_OVERLAY_AUTO_REG requested but CAL_DISABLE_CALIBRATION=1; not registering.");
+            #endif
+        #endif
     #endif
     }
 
-    // If we're using the manual fallback (no esp_lvgl_port), start a task
-    // that waits for the draw semaphore and notifies LVGL of completed flushes.
-#if !HAVE_ESP_LVGL_PORT
-        xTaskCreate(lvgl_flush_notify_task, "lvgl_flush_notifier", 4096, display, 5, NULL);
-#endif
+    // If we're using the manual fallback (no esp_lvgl_port), we already set the
+    // flush wait callback to use the driver semaphore. The notifier task is
+    // removed to prevent re-entrancy issues and deadlocks.
+    #if !HAVE_ESP_LVGL_PORT
+        /* Using display flush wait callback via `example_lvgl_flush_wait_cb`.
+         * The separate notifier task was removed to prevent re-entrancy
+         * issues and deadlocks. For normal runtime we use the wait_cb.
+         */
+    #endif
     // Create LVGL task after UI has been created
         ESP_LOGI(TAG, "Starting LVGL task");
         xTaskCreate(example_lvgl_port_task, "LVGL", 8192, NULL, 2, NULL);
@@ -337,7 +392,16 @@ void app_main(void)
     // Make sure calibration overlay is explicitly disabled at startup. Some
     // older builds may have left calibration active in NVS or early init
     // calls may have started it; ensure we cancel any calibration session.
-    cal_cancel();
+    #if !defined(CAL_DISABLE_CALIBRATION) || (CAL_DISABLE_CALIBRATION == 0)
+        cal_cancel();
+        // Ensure the regular UI is shown after canceling calibration
+        // so we don't draw the calibration 'blue' background. This
+        // will restore the LVGL UI screen (if present) via
+        // ui_manager_show_home().
+        ui_manager_show_home();
+    #else
+        ESP_LOGW(TAG, "Skipping cal_cancel() since CAL_DISABLE_CALIBRATION=1");
+    #endif
 
     // Start the calibration/touch task from existing code
     xTaskCreate(touch_task, "touch", 4096, NULL, 5, NULL);

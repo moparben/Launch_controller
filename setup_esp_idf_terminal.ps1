@@ -7,8 +7,8 @@ Write-Host "    ESP-IDF DEVELOPMENT ENVIRONMENT" -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Cyan
 
 # ESP-IDF Configuration
-$IDF_PATH = "C:\Users\mopar\.espressif\esp-idf-v5.4.2"
-$IDF_PYTHON_ENV = "C:\Users\mopar\.espressif\python_env\idf5.4_py3.13_env"
+$IDF_PATH = "C:\Users\mopar\Downloads\node-v22.21.0-win-x64\esp-idf"
+$IDF_PYTHON_ENV = "C:\esp32_projects\espressif\python_env\idf5.4_py3.13_env"
 $PROJECT_DIR = "C:\esp32_projects\display_controller"
 
 # Verify paths exist

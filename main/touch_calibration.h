@@ -70,6 +70,15 @@ extern "C" {
 #define CAL_FORCE_DISABLE_OVERLAY 1
 #endif
 
+// Compile-time control to disable the calibration subsystem entirely.
+// When set to 1, the calibration API becomes a no-op and no visual or
+// stateful calibration will occur. This is helpful when debugging UI or
+// unwanted overlay behavior and allows the rest of the system to operate
+// without calibration side-effects.
+#ifndef CAL_DISABLE_CALIBRATION
+#define CAL_DISABLE_CALIBRATION 1
+#endif
+
 // Calibration point structure
 typedef struct {
     // Display coordinates (where target is drawn)

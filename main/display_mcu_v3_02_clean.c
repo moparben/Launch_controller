@@ -101,6 +101,10 @@ static IRAM_ATTR bool on_draw_complete(esp_lcd_panel_handle_t panel,
     SemaphoreHandle_t sem = (SemaphoreHandle_t)user_ctx;
     if (sem) {
         xSemaphoreGiveFromISR(sem, &xHigherPriorityTaskWoken);
+        // log for debug when ISR callback fires
+        ESP_EARLY_LOGI("DISPLAY_v3.02", "on_draw_complete: xSemaphoreGiveFromISR called (sem=%p)", (void*)sem);
+    } else {
+        ESP_EARLY_LOGI("DISPLAY_v3.02", "on_draw_complete called but sem==NULL");
     }
     return xHigherPriorityTaskWoken == pdTRUE;
 }
@@ -411,7 +415,11 @@ void touch_task(void *pvParameters)
     ESP_LOGI(TAG, "Touch task started");
     
     // Initialize calibration system
+#if !defined(CAL_DISABLE_CALIBRATION) || (CAL_DISABLE_CALIBRATION == 0)
     cal_init();
+#else
+    ESP_LOGW(TAG, "CAL_DISABLE_CALIBRATION=1: skipping cal_init()");
+#endif
     
     // Optionally, start calibration if no valid calibration exists. By
     // default we avoid automatically entering calibration on boot since it
@@ -420,7 +428,11 @@ void touch_task(void *pvParameters)
 #if defined(CAL_AUTO_START_ON_BOOT) && (CAL_AUTO_START_ON_BOOT == 1)
     if (!cal_is_valid()) {
         ESP_LOGI(TAG, "No valid calibration - starting calibration sequence (auto-start)");
+#if !defined(CAL_DISABLE_CALIBRATION) || (CAL_DISABLE_CALIBRATION == 0)
         cal_start();
+#else
+        ESP_LOGW(TAG, "CAL_AUTO_START_ON_BOOT prevented by CAL_DISABLE_CALIBRATION=1");
+#endif
     }
 #else
     if (!cal_is_valid()) {

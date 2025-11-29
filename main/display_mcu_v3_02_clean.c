@@ -138,8 +138,9 @@ esp_err_t init_display(void)
         .pin_bit_mask = 1ULL << GPIO_BACKLIGHT
     };
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
-    gpio_set_level(GPIO_BACKLIGHT, 1);
-    ESP_LOGI(TAG, "Backlight enabled on GPIO%d", GPIO_BACKLIGHT);
+    // Keep backlight off during init to avoid flashing splash colors
+    gpio_set_level(GPIO_BACKLIGHT, 0);
+    ESP_LOGI(TAG, "Backlight configured but OFF during init (GPIO%d)", GPIO_BACKLIGHT);
     
     // Create MIPI-DSI bus
     esp_lcd_dsi_bus_config_t bus_config = {
@@ -233,6 +234,19 @@ esp_err_t init_display(void)
     
     ESP_LOGI(TAG, "Display initialization complete!");
     return ESP_OK;
+}
+
+// Simple backlight control - leave initial state OFF and enable after UI setup
+void backlight_enable(void)
+{
+    gpio_set_level(GPIO_BACKLIGHT, 1);
+    ESP_LOGI(TAG, "Backlight enabled via backlight_enable() (GPIO%d)", GPIO_BACKLIGHT);
+}
+
+void backlight_disable(void)
+{
+    gpio_set_level(GPIO_BACKLIGHT, 0);
+    ESP_LOGI(TAG, "Backlight disabled via backlight_disable() (GPIO%d)", GPIO_BACKLIGHT);
 }
 
 // Helper: draw a rect in application coordinates (DISPLAY_WIDTH x DISPLAY_HEIGHT)

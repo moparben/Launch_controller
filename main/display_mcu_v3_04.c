@@ -206,8 +206,12 @@ void app_main(void)
 
 #if DISPLAY_ROTATE_90
     // Enable hardware rotation for 90° clockwise
-    esp_lcd_panel_swap_xy(panel_handle, true);
-    ESP_LOGI(TAG, "Display rotated 90° clockwise (hardware)");
+    esp_err_t rc_swap = esp_lcd_panel_swap_xy(panel_handle, true);
+    if (rc_swap == ESP_OK) {
+        ESP_LOGI(TAG, "Display rotated 90° clockwise via panel_swap_xy (hardware)");
+    } else {
+        ESP_LOGW(TAG, "Panel swap_xy returned %s - hardware rotation may be unsupported or failed, falling back to LVGL rotation", esp_err_to_name(rc_swap));
+    }
 #endif
 
     // Draw initial test pattern
@@ -236,7 +240,10 @@ void app_main(void)
         .double_buffer = false,
         .mipi_dsi = true,
         .color_format = LV_COLOR_FORMAT_RGB565,
-        .rotation = { .swap_xy = DISPLAY_ROTATE_90, .mirror_x = false, .mirror_y = false },
+        // We rely on hardware panel swap for rotation. Keep LVGL rotation
+        // disabled to avoid double-swapping which causes coordinate/refresh
+        // mismatch and visual artifacts.
+        .rotation = { .swap_xy = false, .mirror_x = false, .mirror_y = false },
         .flags = { .buff_dma = true, .swap_bytes = false, .buff_spiram = false }
     };
 

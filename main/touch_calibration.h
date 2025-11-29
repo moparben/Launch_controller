@@ -50,7 +50,11 @@ extern "C" {
 // 1 = always use app-level swap (software rotate X/Y on draw & mapping)
 // For portrait mode, we don't swap axes at the app-level; keep the
 // calibration mapping and drawing in the panel's native orientation.
-#define CAL_APP_SOFTWARE_SWAP_XY 0
+// #define CAL_APP_SOFTWARE_SWAP_XY 0  // Now controlled via CMake
+
+#ifndef CAL_APP_SOFTWARE_SWAP_XY
+#define CAL_APP_SOFTWARE_SWAP_XY 0  // Default to no swap
+#endif
 
 // Default raw touch ranges - set to the panel native orientation (portrait)
 // The Waveshare 10.1" JD9365 panel's native orientation is 800x1280 (portrait). When

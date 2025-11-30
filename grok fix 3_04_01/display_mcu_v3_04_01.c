@@ -34,6 +34,7 @@
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_ldo_regulator.h"
 #include "esp_lcd_jd9365_10_1.h"
+#include "display_tag.h"
 #include "esp_lcd_touch.h"
 #include "esp_lcd_touch_gt911.h"
 #include "i2c_bus.h"
@@ -50,9 +51,16 @@ extern void example_lvgl_demo_ui(lv_display_t *disp);
 
 #include "ui_manager.h"
 #include "ui_styles.h"
+// Force-disable calibration overlay and calibration for debugging builds
+#undef CAL_OVERLAY_AUTO_REG
+#undef CAL_FORCE_DISABLE_OVERLAY
+#ifndef CAL_DISABLE_CALIBRATION
+#define CAL_DISABLE_CALIBRATION 1
+#endif
+#define CAL_FORCE_DISABLE_OVERLAY 1
 #include "touch_calibration.h"
 
-static const char *TAG = "DISPLAY_v3.04.01";
+static const char *TAG = DISPLAY_TAG;
 
 // LVGL API mutex - protects all LVGL calls from multiple tasks
 static _lock_t lvgl_api_lock;
@@ -204,6 +212,19 @@ void app_main(void)
         ESP_LOGW(TAG, "Hardware rotation failed (%s) -> using software rotation", esp_err_to_name(rot_ret));
         g_hw_rotation_applied = false;
     }
+#if ENABLE_JD9365_ROTATION_TEST
+    // Optional: test all simple combinations of swap / mirror to see if the
+    // panel responds to MADCTL toggles. Controlled by a build-time flag.
+    ESP_LOGI(TAG, "Running optional JD9365 rotation test (ENABLE_JD9365_ROTATION_TEST=1)");
+    for (int i = 0; i < 4; ++i) {
+        bool swap_axes = (i & 1) != 0;
+        bool mirror_x = (i & 2) != 0;
+        esp_err_t r1 = esp_lcd_panel_swap_xy(panel_handle, swap_axes);
+        esp_err_t r2 = esp_lcd_panel_mirror(panel_handle, mirror_x, false);
+        ESP_LOGI(TAG, "rotation_test: swap=%d mirror_x=%d -> swap_ret=%s mirror_ret=%s", (int)swap_axes, (int)mirror_x, esp_err_to_name(r1), esp_err_to_name(r2));
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+#endif
 
     // Initial test pattern (optional, safe)
     draw_test_pattern();
@@ -232,8 +253,8 @@ void app_main(void)
                          (lvgl_port_rotation_t){ .swap_xy = true },
         .flags         = {
             .buff_dma    = true,
-            .buff_spiram = true,
-            .swap_bytes  = false,
+            .buff_spiram = false, // Use internal DMA-capable buffers for reliability during debugging
+            .swap_bytes  = true,  // Enable byte swapping to correct color ordering if needed
         }
     };
 
@@ -278,9 +299,9 @@ void app_main(void)
     // Use pixel count for LVGL API: buf_pixels, allocate bytes accordingly
     size_t buf_pixels = APP_HOR_RES * 80; // number of pixels
     size_t buf_bytes = buf_pixels * sizeof(lv_color_t);
-    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
+    void *buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     if (!buf1) {
-        buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+        buf1 = heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
     }
     if (!buf1) {
         ESP_LOGE(TAG, "Failed to allocate LVGL draw buffer!");
@@ -288,6 +309,7 @@ void app_main(void)
     }
 
     lv_display_set_buffers(disp, buf1, NULL, buf_pixels, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    ESP_LOGI(TAG, "LVGL buffers: buf1=%p buf_pixels=%d (bytes=%d) color_format=%d", buf1, (int)buf_pixels, (int)buf_bytes, lv_display_get_color_format(disp));
     lv_display_set_flush_cb(disp, example_lvgl_flush_cb);
     lv_display_set_flush_wait_cb(disp, example_lvgl_flush_wait_cb);
 

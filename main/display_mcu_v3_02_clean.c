@@ -25,6 +25,7 @@
 #include "driver/i2c_master.h"
 #include "nvs_flash.h"
 #include "esp_heap_caps.h"
+#include "display_tag.h"
 
 // Display includes
 #include "esp_lcd_panel_ops.h"
@@ -39,7 +40,7 @@
 // Our simple calibration system
 #include "touch_calibration.h"
 
-static const char *TAG = "DISPLAY_v3.02";
+static const char *TAG = DISPLAY_TAG;
 
 // ============================================================================
 // Hardware Configuration

@@ -27,4 +27,22 @@
   "idf.openOcdConfigs": [
     "board/esp32p4-builtin.cfg"
   ]
+  ,
+  "cmake.configureSettings": {
+    "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+  },
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.intelliSenseMode": "gcc-x64",
+  "C_Cpp.default.cStandard": "c17",
+  "C_Cpp.default.cppStandard": "c++17",
+  "clangd.arguments": [
+    "--compile-commands-dir=build"
+  ],
+  "idf.customExtraPathsToExport": [
+    "${workspaceFolder}/components",
+    "${env:IDF_PATH}/components"
+  ],
+  "files.exclude": {
+    "**/build": true
+  }
 }

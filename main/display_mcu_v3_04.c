@@ -45,10 +45,11 @@ extern void example_lvgl_demo_ui(lv_display_t *disp);
 
 #include "ui_manager.h"
 #include "ui_styles.h"
+#include "display_tag.h"
 // Our simple calibration system
 #include "touch_calibration.h"
 
-static const char *TAG = "DISPLAY_v3.04";
+static const char *TAG = DISPLAY_TAG;
 
 // LVGL API mutex - protect all calls into LVGL from different tasks
 static _lock_t lvgl_api_lock;

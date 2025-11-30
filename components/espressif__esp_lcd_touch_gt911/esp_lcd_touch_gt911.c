@@ -394,6 +394,51 @@ static esp_err_t touch_gt911_read_cfg(esp_lcd_touch_handle_t tp)
     return ESP_OK;
 }
 
+/**
+ * Read raw resolution (X/Y) from GT911 config memory if available
+ * A typical layout places touch X/Y resolution (16-bit) near the config start
+ */
+esp_err_t esp_lcd_touch_gt911_get_raw_resolution(esp_lcd_touch_handle_t tp, uint16_t *raw_x_max, uint16_t *raw_y_max)
+{
+    // We'll attempt to read a small config block at CONFIG_REG+1 that should
+    // include X / Y resolution values. Many GT9xx panels store X_L/X_H at
+    // offsets 0x8048/0x8049 and Y_L/Y_H at 0x804A/0x804B (little-endian).
+    uint8_t cfg[6];
+    esp_err_t ret = touch_gt911_i2c_read(tp, ESP_LCD_TOUCH_GT911_CONFIG_REG + 1, cfg, sizeof(cfg));
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed reading GT911 config bytes: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    uint16_t x = ((uint16_t)cfg[1] << 8) | (uint16_t)cfg[0];
+    uint16_t y = ((uint16_t)cfg[3] << 8) | (uint16_t)cfg[2];
+
+    // Sanity check
+    if (x == 0 || y == 0 || x > 16384 || y > 16384) {
+        ESP_LOGW(TAG, "GT911 provided invalid resolution X=%d Y=%d", x, y);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (raw_x_max) *raw_x_max = x;
+    if (raw_y_max) *raw_y_max = y;
+    ESP_LOGI(TAG, "GT911 raw resolution discovered: X=%d Y=%d", x, y);
+    return ESP_OK;
+}
+
+esp_err_t esp_lcd_touch_gt911_get_product_id(esp_lcd_touch_handle_t tp, char *buf, size_t buf_len)
+{
+    if (!tp || !buf || buf_len == 0) return ESP_ERR_INVALID_ARG;
+    uint8_t tmp[8] = {0};
+    // Read a few bytes from product ID register
+    esp_err_t ret = touch_gt911_i2c_read(tp, ESP_LCD_TOUCH_GT911_PRODUCT_ID_REG, tmp, sizeof(tmp));
+    if (ret != ESP_OK) return ret;
+    // Copy to caller buffer
+    size_t copy_len = (buf_len - 1) < sizeof(tmp) ? (buf_len - 1) : sizeof(tmp);
+    memcpy(buf, tmp, copy_len);
+    buf[copy_len] = '\0';
+    return ESP_OK;
+}
+
 static esp_err_t touch_gt911_i2c_read(esp_lcd_touch_handle_t tp, uint16_t reg, uint8_t *data, uint8_t len)
 {
     assert(tp != NULL);

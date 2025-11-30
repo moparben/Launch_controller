@@ -1,3 +1,23 @@
+menu "Touch calibration & overlay control"
+
+config CAL_DISABLE_CALIBRATION
+    bool "Disable touch calibration"
+    default y
+    help
+        When enabled the touch calibration subsystem is disabled at build time.
+        This prevents the calibration overlay/UI from running and helps when
+        debugging UI behavior (touch input is still usable but calibration is
+        not performed automatically).
+
+config CAL_FORCE_DISABLE_OVERLAY
+    bool "Force disable calibration overlay"
+    default y
+    help
+        When enabled, the calibration UI overlay will never be created.
+        This forces the driver and calibration code to skip all overlay
+        registration, useful for debugging and automated builds.
+
+endmenu
 menu "Example Configuration"
     config EXAMPLE_USE_DMA2D_COPY_FRAME
         bool "Use DMA2D to copy draw buffer to frame buffer"

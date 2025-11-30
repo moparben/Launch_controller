@@ -615,8 +615,21 @@ static esp_err_t panel_jd9365_mirror(esp_lcd_panel_t *panel, bool mirror_x, bool
 
 static esp_err_t panel_jd9365_swap_xy(esp_lcd_panel_t *panel, bool swap_axes)
 {
-    ESP_LOGW(TAG, "swap_xy is not supported by this panel");
-    return ESP_ERR_NOT_SUPPORTED;
+    jd9365_panel_t *jd9365 = (jd9365_panel_t *)panel->user_data;
+    esp_lcd_panel_io_handle_t io = jd9365->io;
+    uint8_t madctl_val = jd9365->madctl_val;
+
+    // Standard approach: toggle MV bit for axis swap
+    if (swap_axes) {
+        madctl_val |= LCD_CMD_MV_BIT;
+    } else {
+        madctl_val &= ~LCD_CMD_MV_BIT;
+    }
+
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]){madctl_val}, 1), TAG, "send command failed");
+    jd9365->madctl_val = madctl_val;
+    ESP_LOGI(TAG, "swap_xy applied: madctl=0x%02x", madctl_val);
+    return ESP_OK;
 }
 
 static esp_err_t panel_jd9365_set_gap(esp_lcd_panel_t *panel, int x_gap, int y_gap)

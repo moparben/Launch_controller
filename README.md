@@ -1,3 +1,23 @@
+## Setting the IDF target
+
+This project is targeted at the ESP32-P4 (IDF target `esp32p4`). If you see the message "IDF_TARGET is not set; guessed 'esp32p4' from sdkconfig", you can explicitly set the target with one of the options below:
+
+- Run the helper script (recommended on Windows PowerShell):
+
+```powershell
+cd c:\esp32_projects\display_controller
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\set-idf-target.ps1 -Target esp32p4
+```
+
+- Or run the IDF command directly:
+
+```powershell
+. 'c:\esp32_projects\activate_idf.ps1'
+idf.py set-target esp32p4
+```
+
+After setting the target the first time, the IDF tooling will remember the selection in the project and CMake will no longer need to guess from `sdkconfig`.
+
 # ESP32-P4 Display Controller with GT911 Touch
 
 ## 🚀 **Project Status: Operational Display + Touch Debugging**
@@ -130,6 +150,23 @@ Run `idf.py -p PORT build flash monitor` to build, flash and monitor the project
 The first time you run `idf.py` for the example will cost extra time as the build system needs to address the component dependencies and downloads the missing components from the ESP Component Registry into `managed_components` folder.
 
 (To exit the serial monitor, type ``Ctrl-]``.)
+
+### Select Display MCU Version (v3_02 / v3_04)
+
+This repository contains multiple display MCU file versions for historical/testing purposes. By default, the build will select v3_04. To build a specific version use a CMake variable:
+
+```
+idf.py -DBUILD_DISPLAY_VERSION=v3_02 build
+```
+
+or for v3_04 (default):
+
+```
+idf.py -DBUILD_DISPLAY_VERSION=v3_04 build
+```
+
+Only one version is compiled at a time; the `main/CMakeLists.txt` now selects the correct source file based on the `BUILD_DISPLAY_VERSION` CMake variable to avoid accidental inclusion of multiple versions in the same build.
+
 
 See the [Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/get-started/index.html) for full steps to configure and use ESP-IDF to build projects.
 

@@ -1,4 +1,25 @@
 {
+    "files.exclude": {
+        "**/old_stuff/**": true,
+        "**/grok fix 3_04_01/**": true,
+        "**/build/**": true,
+        "**/.ccls-cache/**": true,
+        "**/managed_components/**": true
+    },
+    "search.exclude": {
+        "**/old_stuff/**": true,
+        "**/grok fix 3_04_01/**": true,
+        "**/build/**": true,
+        "**/managed_components/**": true
+    },
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/old_stuff/**": true,
+        "**/managed_components/**": true
+    }
+}
+{
   "terminal.integrated.profiles.windows": {
     "ESP-IDF PowerShell": {
       "source": "PowerShell",

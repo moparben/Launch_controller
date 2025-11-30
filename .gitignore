@@ -12,3 +12,13 @@
 
 build/*
 
+# Local archives / legacy files that should not be indexed or added
+old_stuff/
+test_firmware/
+archive/
+display_controller_archived/
+grok fix/
+grok_fix/
+repo_backup_before_rewrite/
+repo_mirror_for_rewrite/
+

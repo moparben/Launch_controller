@@ -1,4 +1,43 @@
 {
+    // Workspace-scoped performance and exclude patterns for display_controller
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/dist/**": true,
+        "**/tools/**": true,
+        "**/node_modules/**": true,
+        "**/.espressif/**": true,
+        "**/.pio/**": true,
+        "**/old_stuff/**": true,
+        "**/test_firmware/**": true,
+        "**/archive/**": true,
+        "**/display_controller_archived/**": true,
+        "**/grok fix/**": true,
+        "**/grok_fix/**": true
+    },
+    "files.exclude": {
+        "**/build": true,
+        "**/dist": true,
+        "**/tools": true,
+        "**/node_modules": true,
+        "**/.espressif": true,
+        "**/.pio": true,
+        "**/old_stuff": true,
+        "**/test_firmware": true,
+        "**/archive": true,
+        "**/display_controller_archived": true,
+        "**/grok fix": true,
+        "**/grok_fix": true
+    },
+    "search.exclude": {
+        "**/old_stuff/**": true,
+        "**/test_firmware/**": true,
+        "**/archive/**": true,
+        "**/display_controller_archived/**": true,
+        "**/grok fix/**": true,
+        "**/grok_fix/**": true
+    }
+}
+{
     "files.exclude": {
         "**/old_stuff/**": true,
         "**/grok fix 3_04_01/**": true,

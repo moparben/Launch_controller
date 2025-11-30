@@ -1,4 +1,0 @@
-Executing action: monitor
-Running idf_monitor in directory C:\esp32_projects\display_controller
-Executing "C:\esp32_projects\Espressif\python_env\idf5.4_py3.13_env\Scripts\python.exe C:\esp32_projects\esp_idf\tools/idf_monitor.py -p COM6 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32p4 --revision 1 --decode-panic backtrace C:\esp32_projects\display_controller\build\mipi_dsi_panel.elf --force-color -m 'C:\esp32_projects\Espressif\python_env\idf5.4_py3.13_env\Scripts\python.exe' 'C:\esp32_projects\esp_idf\tools\idf.py' '-p' 'COM6'"...
-could not open port '\\\\.\\COM6': PermissionError(13, 'Access is denied.', None, 5)

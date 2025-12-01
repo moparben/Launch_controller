@@ -1,81 +1,66 @@
 {
-    // Workspace-scoped performance and exclude patterns for display_controller
-    "files.watcherExclude": {
-        "**/build/**": true,
-        "**/dist/**": true,
-        "**/tools/**": true,
-        "**/node_modules/**": true,
-        "**/.espressif/**": true,
-        "**/.pio/**": true,
-        "**/old_stuff/**": true,
-        "**/test_firmware/**": true,
-        "**/archive/**": true,
-        "**/display_controller_archived/**": true,
-        "**/grok fix/**": true,
-        "**/grok_fix/**": true
-    },
-    "files.exclude": {
-        "**/build": true,
-        "**/dist": true,
-        "**/tools": true,
-        "**/node_modules": true,
-        "**/.espressif": true,
-        "**/.pio": true,
-        "**/old_stuff": true,
-        "**/test_firmware": true,
-        "**/archive": true,
-        "**/display_controller_archived": true,
-        "**/grok fix": true,
-        "**/grok_fix": true
-    },
-    "search.exclude": {
-        "**/old_stuff/**": true,
-        "**/test_firmware/**": true,
-        "**/archive/**": true,
-        "**/display_controller_archived/**": true,
-        "**/grok fix/**": true,
-        "**/grok_fix/**": true
-    }
-}
-{
-    "files.exclude": {
-        "**/old_stuff/**": true,
-        "**/grok fix 3_04_01/**": true,
-        "**/build/**": true,
-        "**/.ccls-cache/**": true,
-        "**/managed_components/**": true
-    },
-    "search.exclude": {
-        "**/old_stuff/**": true,
-        "**/grok fix 3_04_01/**": true,
-        "**/build/**": true,
-        "**/managed_components/**": true
-    },
-    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-    "files.watcherExclude": {
-        "**/build/**": true,
-        "**/old_stuff/**": true,
-        "**/managed_components/**": true
-    }
-}
-{
+  "files.watcherExclude": {
+    "**/build/**": true,
+    "**/dist/**": true,
+    "**/tools/**": true,
+    "**/node_modules/**": true,
+    "**/.espressif/**": true,
+    "**/.pio/**": true,
+    "**/old_stuff/**": true,
+    "**/test_firmware/**": true,
+    "**/archive/**": true,
+    "**/display_controller_archived/**": true,
+    "**/grok fix/**": true,
+    "**/grok_fix/**": true,
+    "**/managed_components/**": true
+  },
+  "files.exclude": {
+    "**/build": true,
+    "**/dist": true,
+    "**/tools": true,
+    "**/node_modules": true,
+    "**/.espressif": true,
+    "**/.pio": true,
+    "**/old_stuff": true,
+    "**/test_firmware": true,
+    "**/archive": true,
+    "**/display_controller_archived": true,
+    "**/grok fix": true,
+    "**/grok_fix": true,
+    "**/managed_components/**": true
+  },
+  "search.exclude": {
+    "**/old_stuff/**": true,
+    "**/test_firmware/**": true,
+    "**/archive/**": true,
+    "**/display_controller_archived/**": true,
+    "**/grok fix/**": true,
+    "**/grok_fix/**": true,
+    "**/managed_components/**": true
+  },
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.intelliSenseMode": "gcc-x64",
+  "C_Cpp.default.cStandard": "c17",
+  "C_Cpp.default.cppStandard": "c++17",
+
   "terminal.integrated.profiles.windows": {
     "ESP-IDF PowerShell": {
       "source": "PowerShell",
       "args": [
         "-NoExit",
         "-File",
-        "C:\\esp32_projects\\activate_idf.ps1"
+        "D:\\esp32_projects\\activate_idf.ps1"
       ],
       "icon": "chip"
     }
   },
   "terminal.integrated.defaultProfile.windows": "ESP-IDF PowerShell",
-  
-  // ESP-IDF Extension Configuration
-  "idf.espIdfPath": "C:\\esp32_projects\\esp_idf",
-  "idf.pythonBinPath": "C:\\esp32_projects\\Espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
-  "idf.toolsPath": "C:\\esp32_projects\\Espressif",
+  "terminal.integrated.cwd": "D:\\esp32_projects",
+
+  "idf.espIdfPath": "D:\\esp32_projects\\esp_idf",
+  "idf.pythonBinPath": "D:\\esp32_projects\\Espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
+  "idf.toolsPath": "D:\\esp32_projects\\Espressif",
   "idf.buildPath": "${workspaceFolder}/build",
   "idf.sdkconfigFilePath": "${workspaceFolder}/sdkconfig",
   "idf.port": "COM6",
@@ -84,17 +69,9 @@
   "idf.monitorBaudRate": "115200",
   "idf.enableIdfComponentManager": true,
   "idf.showOnboardingOnInit": false,
-  "idf.openOcdConfigs": [
-    "board/esp32p4-builtin.cfg"
-  ]
-  ,
   "cmake.configureSettings": {
     "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
   },
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
-  "C_Cpp.default.intelliSenseMode": "gcc-x64",
-  "C_Cpp.default.cStandard": "c17",
-  "C_Cpp.default.cppStandard": "c++17",
   "clangd.arguments": [
     "--compile-commands-dir=build"
   ],

@@ -22,3 +22,6 @@ grok_fix/
 repo_backup_before_rewrite/
 repo_mirror_for_rewrite/
 
+
+# Local dev toolchains
+/tools/riscv32-esp-elf/

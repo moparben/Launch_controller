@@ -32,3 +32,8 @@ Further steps:
 - Keep in mind a history rewrite changes commit SHAs and requires developer coordination.
 
 If you need assistance with the next steps (re-clones, PR rebases, or further history cleanups), please let me know the paths to target next.
+
+Final pass notes:
+- Removed additional example and demo assets, test fonts, and other large files from the `managed_components/lvgl__lvgl` tree across multiple passes.
+- The repository pack size after the passes is significantly reduced — a fresh clone shows a pack size under ~40 MiB (varies by environment).
+

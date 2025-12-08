@@ -60,6 +60,8 @@ typedef struct {
              *   This flag is only valid for the RGB interface.
              */
     } flags;
+    int backlight_gpio_num; /*!< Optional GPIO to control backlight. Set to -1 if not used. */
+    unsigned int backlight_active_high:1; /*!< if 1, set GPIO to high to turn backlight on */
 } jd9365_vendor_config_t;
 
 /**

@@ -7,5 +7,7 @@ dependencies:
   espressif/esp_lcd_ek79007: "^1.0.0"
   # LVGL graphics library
   lvgl/lvgl: "^9.2.0"
+  # Waveshare JD9365 MIPI-DSI panel
+  waveshare/esp_lcd_jd9365_10_1: "^1.0.4"
   # TODO: Add JPEG support in future version
   # espressif/esp_jpeg: "^1.0.0"

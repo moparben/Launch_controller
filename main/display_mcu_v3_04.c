@@ -12,13 +12,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "esp_system.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <sys/lock.h>
 #include "driver/gpio.h"
-#include "driver/i2c_master.h"
+#include "i2c_bus.h"
 #include "nvs_flash.h"
 #include "esp_heap_caps.h"
 
@@ -50,6 +51,7 @@ extern void example_lvgl_demo_ui(lv_display_t *disp);
 #include "touch_calibration.h"
 #include "cmds_splash.h"
 #include "cmds_cal.h"
+#include "cmds_panel.h"
 
 static const char *TAG = DISPLAY_TAG;
 
@@ -74,6 +76,9 @@ static _lock_t lvgl_api_lock;
 extern esp_lcd_panel_handle_t panel_handle;
 extern esp_lcd_panel_io_handle_t mipi_dbi_io;
 extern SemaphoreHandle_t draw_finish_sem;
+// Queue used to hold temporary allocated buffers (like rotation buffers)
+// until the panel driver has finished DMA transferring the color data.
+static QueueHandle_t rotbuf_free_q = NULL;
 extern esp_lcd_touch_handle_t touch_handle;
 extern void touch_task(void *pvParameters);
 
@@ -104,6 +109,17 @@ static void example_lvgl_flush_wait_cb(lv_display_t *disp)
         /* If the wait fails for some reason, give the task a small delay */
         vTaskDelay(pdMS_TO_TICKS(5));
     }
+    else {
+        // Free any buffers queued for release by the on_color_trans_done ISR
+        void *buf_to_free = NULL;
+        if (rotbuf_free_q) {
+            if (xQueueReceive(rotbuf_free_q, &buf_to_free, 0) == pdTRUE) {
+                if (buf_to_free) {
+                    heap_caps_free(buf_to_free);
+                }
+            }
+        }
+    }
     ESP_LOGD(TAG, "example_lvgl_flush_wait_cb: leaving (disp=%p)", (void*)disp);
 }
 
@@ -119,7 +135,88 @@ static void example_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uin
         ESP_LOGW(TAG, "example_lvgl_flush_cb: invalid arguments (area/px_map)");
         return;
     }
-    esp_err_t r = esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    // If hardware swap was applied, LVGL coordinates are in application space
+    // (1280x800) whereas the DPI panel is in hardware pixel space (800x1280).
+    // We must rotate the px_map buffer and transform coordinates before drawing.
+    extern bool panel_hw_swap_xy; // from display_helpers_idf.c
+    esp_err_t r = ESP_OK;
+    if (!panel_hw_swap_xy) {
+        r = esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    } else {
+        // LVGL coordinates
+        int lx1 = area->x1;
+        int ly1 = area->y1;
+        int lx2_excl = area->x2 + 1;
+        int ly2_excl = area->y2 + 1;
+        // LVGL display width used for mapping
+        int lvw = lv_display_get_horizontal_resolution(disp);
+        // Transform to hardware coordinates (90 deg clockwise): hx = ly; hy = (lvw - 1) - lx
+        int hx1 = ly1;
+        int hx2_excl = ly2_excl;
+        int hy1 = lvw - lx2_excl; // start y
+        int hy2_excl = lvw - lx1; // end y (exclusive)
+        int rot_w = hx2_excl - hx1; // equals ly2_excl - ly1
+        int rot_h = hy2_excl - hy1; // equals lx2_excl - lx1
+            if (rot_w <= 0 || rot_h <= 0) {
+            ESP_LOGW(TAG, "example_lvgl_flush_cb: invalid rotated dims: rot_w=%d rot_h=%d", rot_w, rot_h);
+            r = ESP_ERR_INVALID_ARG;
+        } else {
+            size_t pixel_size = sizeof(lv_color_t);
+            int src_w = lx2_excl - lx1;
+            // Basic sanity checks on computed hardware coordinates
+            if (hx1 < 0 || hy1 < 0 || hx2_excl > DISPLAY_NATIVE_WIDTH || hy2_excl > DISPLAY_NATIVE_HEIGHT) {
+                ESP_LOGE(TAG, "example_lvgl_flush_cb: rotated bounds out of range: hx=(%d,%d) hy=(%d,%d) native=(%d,%d)", hx1, hx2_excl, hy1, hy2_excl, DISPLAY_NATIVE_WIDTH, DISPLAY_NATIVE_HEIGHT);
+                r = ESP_ERR_INVALID_ARG;
+            }
+            size_t rot_size = (size_t)rot_w * rot_h * pixel_size;
+            // Try to allocate a temp buffer for rotated pixels, prefer internal DMA memory
+            void *rot_buf = heap_caps_malloc(rot_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+            if (!rot_buf) {
+                rot_buf = heap_caps_malloc(rot_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            }
+            if (!rot_buf) {
+                ESP_LOGW(TAG, "example_lvgl_flush_cb: unable to allocate rotated buffer size=%u", (unsigned)rot_size);
+                r = ESP_ERR_NO_MEM;
+            } else {
+                ESP_LOGD(TAG, "example_lvgl_flush_cb: rot_w=%d rot_h=%d src_w=%d rot_size=%u px_map=%p rot_buf=%p", rot_w, rot_h, src_w, (unsigned)rot_size, (void*)px_map, (void*)rot_buf);
+                if (rot_size > (size_t)DISPLAY_NATIVE_WIDTH * DISPLAY_NATIVE_HEIGHT * pixel_size) {
+                    ESP_LOGE(TAG, "example_lvgl_flush_cb: rotated buffer size exceeds panel native size: rot_size=%u native_max=%u", (unsigned)rot_size, (unsigned)(DISPLAY_NATIVE_WIDTH * DISPLAY_NATIVE_HEIGHT * pixel_size));
+                    heap_caps_free(rot_buf);
+                    r = ESP_ERR_INVALID_ARG;
+                }
+                // rotate pixels from px_map -> rot_buf
+                uint16_t *src = (uint16_t *)px_map;
+                uint16_t *dst = (uint16_t *)rot_buf;
+                int src_w = lx2_excl - lx1;
+                for (int sy = ly1; sy < ly2_excl; sy++) {
+                    for (int sx = lx1; sx < lx2_excl; sx++) {
+                        int src_x = sx - lx1;
+                        int src_y = sy - ly1;
+                        int dst_row = (lx2_excl - 1) - sx; // row index in rotated buffer
+                        int dst_col = sy - ly1; // column index in rotated buffer
+                        int dst_index = dst_row * rot_w + dst_col;
+                        int src_index = src_y * src_w + src_x;
+                        dst[dst_index] = src[src_index];
+                    }
+                }
+                // Call draw with transformed coords and rotated buffer
+                ESP_LOGD(TAG, "example_lvgl_flush_cb: invoking esp_lcd_panel_draw_bitmap panel=%p hx=(%d,%d)-(%d,%d) rot_buf=%p", (void*)panel, hx1, hy1, hx2_excl, hy2_excl, rot_buf);
+                r = esp_lcd_panel_draw_bitmap(panel, hx1, hy1, hx2_excl, hy2_excl, rot_buf);
+                // Do not free the buffer yet - wait until the panel indicates the
+                // DMA transfer is complete via the on_color_trans_done callback.
+                if (rotbuf_free_q) {
+                    // Queue the pointer for later freeing in the LVGL wait function
+                    if (xQueueSend(rotbuf_free_q, &rot_buf, 0) != pdTRUE) {
+                        // Queue full - worst case free immediately (leak/overflow prevention)
+                        ESP_LOGW(TAG, "rotbuf_free_q full, freeing rot_buf immediately");
+                        heap_caps_free(rot_buf);
+                    }
+                } else {
+                    heap_caps_free(rot_buf);
+                }
+            }
+        }
+    }
     if (r != ESP_OK) {
         ESP_LOGW(TAG, "example_lvgl_flush_cb: esp_lcd_panel_draw_bitmap failed: %s", esp_err_to_name(r));
     }
@@ -128,10 +225,9 @@ static void example_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uin
     // wait_for_flushing(), ensure we always signal completion via the draw
     // semaphore or directly notify LVGL if no semaphore exists.
     if (draw_finish_sem) {
-        ESP_LOGD(TAG, "example_lvgl_flush_cb: giving draw_finish_sem to notify LVGL");
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        xSemaphoreGive(draw_finish_sem);
-        (void)xHigherPriorityTaskWoken;
+        // Do not give the semaphore from the flush callback - the right place
+        // to notify LVGL is from the panel IO event callback (on_color_trans_done).
+        // This ensures the panel DMA has finished before LVGL continues.
     } else {
         // As a last resort, directly notify LVGL that this flush is done.
         _lock_acquire(&lvgl_api_lock);
@@ -145,6 +241,20 @@ static void example_increase_lvgl_tick(void *arg)
 {
     LV_UNUSED(arg);
     lv_tick_inc(2);
+}
+
+// Panel callback: notify LVGL that color DMA transfer has completed. This
+// callback runs in ISR context so it uses xSemaphoreGiveFromISR.
+IRAM_ATTR static bool lvgl_panel_on_color_trans_done(esp_lcd_panel_handle_t panel, esp_lcd_dpi_panel_event_data_t *edata, void *user_ctx)
+{
+    (void)panel;
+    (void)edata;
+    SemaphoreHandle_t sem = (SemaphoreHandle_t)user_ctx;
+    BaseType_t need_yield = pdFALSE;
+    if (sem) {
+        xSemaphoreGiveFromISR(sem, &need_yield);
+    }
+    return (need_yield == pdTRUE);
 }
 
 static void example_lvgl_port_task(void *arg)
@@ -190,6 +300,10 @@ static void lvgl_touch_read_cb(lv_indev_t * drv, lv_indev_data_t *data)
 // New entry point that creates LVGL display and indev after init_display/init_touch
 void app_main(void)
 {
+    /* Early plain printf to ensure we see startup even if logging subsystem
+     * hasn't been fully initialized or if log level filtering hides tags. */
+    printf("app_main: starting Display MCU v3.04 (LVGL with rotation)\n");
+    fflush(stdout);
     ESP_LOGI(TAG, "Starting Display MCU v3.04 (LVGL with rotation)");
 
     // Initialize LVGL API lock
@@ -203,6 +317,15 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    /* Heartbeat LED (GPIO2) to indicate that app_main has been reached. Use
+     * an available pin on the dev board; you can change to a different pin
+     * if your board uses a different LED. */
+    gpio_config_t hb_cfg = { .mode = GPIO_MODE_OUTPUT, .pin_bit_mask = (1ULL<<GPIO_NUM_2), .intr_type = GPIO_INTR_DISABLE, .pull_down_en = 0, .pull_up_en = 0 };
+    gpio_config(&hb_cfg);
+    gpio_set_level(GPIO_NUM_2, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(GPIO_NUM_2, 0);
+
     // Initialize display from existing code
     extern esp_err_t init_display(void);
     ESP_ERROR_CHECK(init_display());
@@ -212,6 +335,8 @@ void app_main(void)
     esp_err_t rc_swap = esp_lcd_panel_swap_xy(panel_handle, true);
     if (rc_swap == ESP_OK) {
         ESP_LOGI(TAG, "Display rotated 90° clockwise via panel_swap_xy (hardware)");
+        extern bool panel_hw_swap_xy; // defined in display_helpers_idf.c
+        panel_hw_swap_xy = true;
     } else {
         ESP_LOGW(TAG, "Panel swap_xy returned %s - hardware rotation may be unsupported or failed, falling back to LVGL rotation", esp_err_to_name(rc_swap));
     }
@@ -220,6 +345,24 @@ void app_main(void)
     // Draw initial test pattern
     extern void draw_test_pattern(void);
     draw_test_pattern();
+
+    // Create rotation buffer free queue used to hold temp buffers until the
+    // panel's on_color_trans_done notifies completion. We keep a modest queue
+    // size to avoid unbounded memory usage.
+    rotbuf_free_q = xQueueCreate(8, sizeof(void *));
+    if (!rotbuf_free_q) {
+        ESP_LOGW(TAG, "rotbuf_free_q creation failed; temp rotation buffers will not be freed reliably");
+    }
+
+    // Register panel IO event callbacks to signal LVGL via the draw_finish_sem
+    if (panel_handle) {
+        esp_lcd_dpi_panel_event_callbacks_t cbs = {
+            .on_color_trans_done = lvgl_panel_on_color_trans_done,
+        };
+        ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(panel_handle, &cbs, draw_finish_sem));
+    } else {
+        ESP_LOGW(TAG, "Panel handle is NULL; cannot register on_color_trans_done callback");
+    }
 
     // Initialize touch
     extern esp_err_t init_touch(void);
@@ -388,6 +531,8 @@ void app_main(void)
             register_splash_console_cmd();
             /* Register calibration console command to allow disabling overlay at runtime */
             register_cal_console_cmd();
+            /* Register panel control commands */
+            register_panel_console_cmd();
             /* Register dev console commands for splash control (if console is available) */
             register_splash_console_cmd();
 

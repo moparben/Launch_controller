@@ -67,3 +67,5 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # Display Controller Selection
 # ========================================
 CONFIG_EXAMPLE_LCD_USE_JD9365=y
+ # Disable legacy I2C driver vs driver-ng conflict abort during transition to esp_driver_i2c
+ CONFIG_I2C_SKIP_LEGACY_CONFLICT_CHECK=y

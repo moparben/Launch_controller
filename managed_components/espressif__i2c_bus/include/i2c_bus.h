@@ -8,16 +8,7 @@
 #define _I2C_BUS_H_
 
 #include "esp_idf_version.h"
-
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
-#if CONFIG_I2C_BUS_BACKWARD_CONFIG
-#include "driver/i2c.h"
-#else
 #include "driver/i2c_master.h"
-#endif
-#else
-#include "driver/i2c.h"
-#endif
 
 #define NULL_I2C_MEM_ADDR 0xFF          /*!< set mem_address to NULL_I2C_MEM_ADDR if i2c device has no internal address during read/write */
 #define NULL_I2C_MEM_16BIT_ADDR 0XFFFF  /*!< set 16bit mem_address to NULL_I2C_MEM_16BIT_ADDR if i2c device has no internal address during read/write */

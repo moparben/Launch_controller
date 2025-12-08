@@ -12,10 +12,10 @@ param (
 
 Write-Host "Setting IDF target to: $Target"
 
-$activatePath = Join-Path -Path $PSScriptRoot -ChildPath "..\activate_idf.ps1"
-if (-not (Test-Path $activatePath)) {
-    $activatePath = "c:\esp32_projects\activate_idf.ps1"
-}
+    $activatePath = Join-Path -Path $PSScriptRoot -ChildPath "..\activate_idf.ps1"
+    if (-not (Test-Path $activatePath)) {
+        $activatePath = "D:\\esp32_projects\\activate_idf.ps1"
+    }
 if (-not (Test-Path $activatePath)) {
     Write-Error "Could not find activate_idf.ps1; please set your IDF environment first."
     exit 1

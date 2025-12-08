@@ -49,6 +49,8 @@ typedef struct
     // To save the original functions of MIPI DPI panel
     esp_err_t (*del)(esp_lcd_panel_t *panel);
     esp_err_t (*init)(esp_lcd_panel_t *panel);
+    int backlight_gpio_num;
+    unsigned int backlight_active_high:1;
 } jd9365_panel_t;
 
 static const char *TAG = "jd9365";
@@ -120,6 +122,8 @@ esp_err_t esp_lcd_new_panel_jd9365(const esp_lcd_panel_io_handle_t io, const esp
     jd9365->lane_num = vendor_config->mipi_config.lane_num;
     jd9365->reset_gpio_num = panel_dev_config->reset_gpio_num;
     jd9365->flags.reset_level = panel_dev_config->flags.reset_active_high;
+    jd9365->backlight_gpio_num = vendor_config->backlight_gpio_num;
+    jd9365->backlight_active_high = vendor_config->backlight_active_high;
 
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
@@ -147,6 +151,19 @@ esp_err_t esp_lcd_new_panel_jd9365(const esp_lcd_panel_io_handle_t io, const esp
     // i2c_bus_delete(&i2c0_bus);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
+
+    /* configure backlight GPIO if present */
+    if (jd9365->backlight_gpio_num >= 0) {
+        gpio_config_t bl_conf = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = 1ULL << jd9365->backlight_gpio_num,
+        };
+        if (gpio_config(&bl_conf) == ESP_OK) {
+            int level = jd9365->backlight_active_high ? 1 : 0;
+            gpio_set_level(jd9365->backlight_gpio_num, level);
+            ESP_LOGI(TAG, "Backlight GPIO %d set to %d", jd9365->backlight_gpio_num, level);
+        }
+    }
 
     // Create MIPI DPI panel
     esp_lcd_panel_handle_t panel_handle = NULL;
@@ -419,6 +436,12 @@ static esp_err_t panel_jd9365_del(esp_lcd_panel_t *panel)
     {
         gpio_reset_pin(jd9365->reset_gpio_num);
     }
+    if (jd9365->backlight_gpio_num >= 0)
+    {
+        /* Turn off backlight and release the pin */
+        gpio_set_level(jd9365->backlight_gpio_num, jd9365->backlight_active_high ? 0 : 1);
+        gpio_reset_pin(jd9365->backlight_gpio_num);
+    }
     // Delete MIPI DPI panel
     jd9365->del(panel);
 
@@ -653,6 +676,12 @@ static esp_err_t panel_jd9365_disp_on_off(esp_lcd_panel_t *panel, bool on_off)
         command = LCD_CMD_DISPOFF;
     }
     ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, command, NULL, 0), TAG, "send command failed");
+    /* Also toggle backlight GPIO if configured */
+    if (jd9365->backlight_gpio_num >= 0) {
+        int level = on_off ? (jd9365->backlight_active_high ? 1 : 0) : (jd9365->backlight_active_high ? 0 : 1);
+        ESP_LOGI(TAG, "Setting backlight GPIO %d to %d", jd9365->backlight_gpio_num, level);
+        gpio_set_level(jd9365->backlight_gpio_num, level);
+    }
     return ESP_OK;
 }
 #endif

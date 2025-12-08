@@ -42,7 +42,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 5.4.3
+    version: 5.5.1
   lvgl:
     dependencies: []
     source:
@@ -63,6 +63,6 @@ direct_dependencies:
 - idf
 - lvgl/lvgl
 - waveshare/esp_lcd_jd9365_10_1
-manifest_hash: b553d8b8b8eaba8f7d30588f40c5c4286154fa5ae4b6f68c561806df72d10044
+manifest_hash: 3c42a490713b15088d4cbe0b0d1791022c0a66ba009b12f575aec3266f45213f
 target: esp32p4
 version: 2.0.0

@@ -49,7 +49,7 @@ if(NOT DEFINED display_def)
     set(display_def BUILD_DISPLAY_V3_04)
 endif()
 message(STATUS "Active display sources: ${display_srcs}")
-idf_component_register(SRCS ${display_srcs} "touch_calibration.c" "ui_manager.c" "ui_styles.c" "img_rocket_png.c" "splash.c" "cmds_splash.c" "cmds_cal.c"
+idf_component_register(SRCS ${display_srcs} "touch_calibration.c" "ui_manager.c" "ui_styles.c" "img_rocket_png.c" "splash.c" "cmds_splash.c" "cmds_cal.c" "cmds_panel.c"
                     INCLUDE_DIRS ".")
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE ${display_def} CAL_APP_SOFTWARE_SWAP_XY=0 CAL_DISPLAY_WIDTH=1280 CAL_DISPLAY_HEIGHT=800 DISPLAY_TAG="DISPLAY_v3.04" ENABLE_JD9365_ROTATION_TEST=0)

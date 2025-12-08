@@ -56,7 +56,10 @@
     }
   },
   "terminal.integrated.defaultProfile.windows": "ESP-IDF PowerShell",
-  "terminal.integrated.cwd": "D:\\esp32_projects",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  // Use D: Python venv by default for this workspace
+  "idf.pythonBinPath": "D:\\esp32_projects\\Espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
+  "python.defaultInterpreterPath": "D:\\esp32_projects\\Espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
 
   "idf.espIdfPath": "D:\\esp32_projects\\esp_idf",
   "idf.pythonBinPath": "D:\\esp32_projects\\Espressif\\python_env\\idf5.4_py3.13_env\\Scripts\\python.exe",
